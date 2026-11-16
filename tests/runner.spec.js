@@ -793,6 +793,7 @@ test.describe('Workout runner (client)', () => {
 
     await openRunnerMenuItem(page, '+ Add exercise')
     await pickOrCreateExercise(page, 'Playwright Change Test A')
+    await page.click('#sf-chip-notes')   // Notes is a More options chip on the strength form (2026-11-15)
     await page.fill('#att-notes', 'keep this note')
     await page.locator('button:has-text("Change")').click()
 

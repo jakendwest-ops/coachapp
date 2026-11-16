@@ -37,7 +37,15 @@ describe('_tsGroupUniform: when can a group be shown as ONE row?', () => {
     for (const k of ['repsMin', 'repsMax', 'weight', 'intensityMin', 'intensityMax', 'restMin', 'restMax', 'effortMin', 'effortMax', 'tempo', 'countdown']) {
       assert.equal(uni([set(), set({ [k]: '99' })], false), false, k)
     }
-    assert.equal(uni([set(), set({ intensityBasis: 'topSetWeight' })], false), false, 'basis')
+    assert.equal(uni([set(), set({ intensityBasis: 'lastBest' })], false), false, 'basis')
+    assert.equal(uni([set(), set(), set({ intensityBasis: 'topSetWeight' })], false), false, 'a "today\'s" base on only SOME later sets is a real difference')
+  })
+  // Jake, 2026-11-15 ("set 1 sets it"): straight sets whose later sets use a "today's" base - set 1 is worked up to and carries no %.
+  test('straight sets with set 1 setting the weight are still ONE group (set 1 has no % or base of its own)', () => {
+    const later = { intensityBasis: 'topSet', intensityMin: '80', intensityMax: '80' }
+    assert.equal(uni([set(), set(later), set(later)], false), true)
+    assert.equal(uni([set(), set(later), set({ ...later, intensityMin: '75' })], false), false, 'sets 2 on must still agree with each other')
+    assert.equal(uni([set(), set(later), set(later)], false, 'unilateral'), false, 'only weight & reps: a unilateral exercise cannot save that base')
     assert.equal(uni([set(), set({ effortType: 'rir' })], false), false, 'effort scale')
     assert.equal(uni([set(), set({ bodyweight: true })], false), false, 'bodyweight')
   })

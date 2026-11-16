@@ -255,7 +255,7 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
     // value. That is how every cardio target was lost before les-036. This test is the guard.
     await openTemplateBuilderWithFixture(page, { sets: 2 })
     await page.click('#ts-topset-0')
-    await page.selectOption('#ts-basis-1', 'topSet')
+    await page.click('#sf-basis-topSet')
     await page.fill('#ts-imin-1', '70')
     await saveTemplate(page)
     await reopenTemplate(page)
@@ -268,6 +268,7 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
   test('a set with no basis chosen persists as stored, not undefined', async ({ page }) => {
     // Every pre-existing template must keep behaving exactly as it does today.
     await openTemplateBuilderWithFixture(page, { sets: 1 })
+    await page.click('#sf-chip-load'); await page.click('#sf-load-pct')
     await page.fill('#ts-imin-0', '75')
     await saveTemplate(page)
     await reopenTemplate(page)
@@ -275,20 +276,15 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
     expect(sets[0].intensityBasis).toBe('stored')
   })
 
-  test('turning the top set off warns instead of silently orphaning a later row\'s basis', async ({ page }) => {
-    // The plan explicitly forbids silently rewriting sets_json here -- a training day's loads must
-    // not change with no visible cause. This proves the warning fires and names the orphaned set,
-    // not that anything gets auto-corrected.
+  // Jake, 2026-11-15 ("set 1 sets it"): on Straight sets a "today's" base is no longer an orphan - set 1 is worked up to and the %
+  // applies from set 2. So the screen now SAYS that, and the data must still not be silently rewritten.
+  test('turning the top set off keeps a later row\'s basis and says set 1 sets the weight', async ({ page }) => {
     await openTemplateBuilderWithFixture(page, { sets: 2 })
     await page.click('#ts-topset-0')
-    await page.selectOption('#ts-basis-1', 'topSet')
-    const before = await page.locator('#att-sets-container').innerText()
-    expect(before, 'no warning while set 1 IS still a top set').not.toContain('no longer a top set')
-
-    await page.click('#ts-straight-0')   // turn set 1's top-set flag back off (the 2026-10-28 builder's "Straight sets" button)
-    const after = await page.locator('#att-sets-container').innerText()
-    expect(after).toContain('Set 2')
-    expect(after).toContain('no longer a top set')
+    await page.click('#sf-basis-topSet')
+    await page.fill('#ts-imin-1', '70')
+    await page.click('#ts-straight-0')   // turn set 1's top-set flag back off
+    await expect(page.locator('#sf-set1-note')).toContainText('Set 1 sets the weight')
 
     // And the orphaned row's data must survive UNCHANGED -- the warning is informational only.
     const sets = await page.evaluate(() => window._templateSets)
@@ -306,22 +302,20 @@ test.describe('builder: top set + intensity basis (Task 3, 2026-09-29)', () => {
     // the guard was written for.
     await openTemplateBuilderWithFixture(page, { sets: 2 })
     await page.click('#ts-topset-0')
-    await page.selectOption('#ts-basis-1', 'topSet')
+    await page.click('#sf-basis-topSet')
+    await page.fill('#ts-imin-1', '70')
 
-    await page.click('#att-metric-pills button:has-text("Unilateral")')
+    await page.click('#sf-chip-unilateral')   // the Unilateral chip (2026-11-15; was a pill above the sets)
 
     const r = await page.evaluate(() => ({
       type: document.getElementById('att-type')?.value,
       pillGone: !document.getElementById('ts-topset-0'),
-      weightCellBack: !!document.getElementById('ts-weight-0'),
     }))
     expect(r.type, 'the type select must actually have flipped to unilateral').toBe('unilateral')
-    expect(r.pillGone, 'the TOP SET pill only ever renders for weight_reps -- it must be gone').toBe(true)
-    expect(r.weightCellBack, 'row 0 must get its weight input back once it is no longer an ACTIVE top set').toBe(true)
-
-    const warningText = await page.locator('#att-sets-container').innerText()
-    expect(warningText, 'row 1 still points at "Today\'s top set" with nothing active to point at -- must warn').toContain('Set 2')
-    expect(warningText).toContain('no longer a top set')
+    expect(r.pillGone, 'the top set only ever renders for weight_reps -- it must be gone').toBe(true)
+    // A unilateral exercise cannot save a "today's" base (_cleanTemplateSets makes it 'stored'): say so, never change it silently.
+    await expect(page.locator('#sf-basis-unsupported')).toContainText('Set 2')
+    await expect(page.locator('#sf-basis-unsupported')).toContainText('saved as a % of the saved 1RM')
   })
 })
 
@@ -733,8 +727,9 @@ test.describe('builder: top-set review fixes (2026-09-30)', () => {
   // runner rendered a kg target and a %1RM ghost on the one set the builder called unprescribed.
   test('marking a row as the top set clears the weight and %1RM it can no longer show', async ({ page }) => {
     await openTemplateBuilderWithFixture(page, { sets: 2 })
+    await page.click('#sf-chip-load')                          // Load: a weight (2026-11-15: under More options)
     await page.fill('#ts-weight-0', '100')
-    await page.fill('#ts-imin-0', '85')
+    await page.evaluate(() => { flushTemplateSets('att-sets-container'); window._templateSets.forEach(s => { s.intensityMin = '85' }) })   // and a % (Load is one or the other on screen now)
     await page.click('#ts-topset-0')          // hides both cells
     await saveTemplate(page)
     await reopenTemplate(page)
@@ -1000,11 +995,15 @@ test.describe('builder: Copy previous set after a top set (review round 2, 2026-
     // 2026-10-28 builder: "Top set + back-offs" now makes the back-off set itself, so the flagged-row copy
     // can only happen on the per-set cards ("Customise each set"): remove the made set, leaving the lone
     // top set, then Copy previous set copies that flagged row. Same bug, same guard.
+    // 2026-11-15: the per-set view is tiles; "+ Add set" copies the last set (here the lone top set, flag included in memory).
     await page.click('#ts-show-each')
-    await page.locator('button[aria-label="Remove set 2"]').click()
-    await expect(page.locator('#ts-rmin-1')).toHaveCount(0)
-    await page.locator('button', { hasText: 'Copy previous set' }).click()
-    await page.selectOption('#ts-basis-1', 'topSet')
+    await page.click('#sf-tile-1')
+    await page.click('#sf-del-1')
+    await expect(page.locator('#sf-tile-1')).toHaveCount(0)
+    await page.click('#sf-add-set')
+    await page.evaluate(() => { window._templateSets[1].isTopSet = true })   // the old flagged-copy shape, which the save must still clear
+    await page.click('#ts-hide-each')
+    await page.click('#sf-basis-topSet')
     await page.fill('#ts-imin-1', '70')
     await saveTemplate(page)
     await reopenTemplate(page)

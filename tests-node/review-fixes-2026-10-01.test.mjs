@@ -69,10 +69,12 @@ describe('review B3 — the builder shows a prescribed effort of 0 instead of a 
   }
   const valueOf = (html, id) => { const m = new RegExp(`id="${id}"[^>]*`).exec(html); return m ? (/value="([^"]*)"/.exec(m[0]) || [])[1] ?? null : undefined }
 
+  // The strength form (2026-11-15): a field on Fixed draws ONE box (its high end follows the low end on flush), a Range draws two, and
+  // "Customise each set" draws only the OPEN set. A 0 must still render as 0 in every one of those shapes.
   test('numeric 0 in stored sets_json renders as value="0" (a blank box was flushed back to "" on the next save)', () => {
     const html = render([{ repsMin: '5', effortType: 'rir', effortMin: 0, effortMax: 0 }])
     assert.equal(valueOf(html, 'ts-emin-0'), '0')
-    assert.equal(valueOf(html, 'ts-emax-0'), '0')
+    assert.equal(valueOf(html, 'ts-emax-0'), undefined, 'Fixed: one box; the high end follows it')
   })
   test('a string "0" and an ordinary range still render', () => {
     const a = render([{ repsMin: '5', effortMin: '0' }])
@@ -80,21 +82,23 @@ describe('review B3 — the builder shows a prescribed effort of 0 instead of a 
     const b = render([{ repsMin: '5', effortMin: '7', effortMax: '9' }])
     assert.equal(valueOf(b, 'ts-emin-0'), '7'); assert.equal(valueOf(b, 'ts-emax-0'), '9')
   })
+  test('a range with a 0 end keeps the 0', () => {
+    const html = render([{ repsMin: '5', effortType: 'rir', effortMin: 0, effortMax: 2 }])
+    assert.equal(valueOf(html, 'ts-emin-0'), '0'); assert.equal(valueOf(html, 'ts-emax-0'), '2')
+  })
   test('no effort prescribed renders no value attribute (the fix must not invent one)', () => {
     const html = render([{ repsMin: '5' }, { repsMin: '5', effortMin: '', effortMax: null }], 'weight_reps', true)
     assert.equal(valueOf(html, 'ts-emin-0'), null)
-    assert.equal(valueOf(html, 'ts-emin-1'), null)
-    assert.equal(valueOf(html, 'ts-emax-1'), null)
+    assert.equal(valueOf(html, 'ts-emin-1'), undefined, 'Customise each set draws the open set only')
   })
   test('the same holds in the grouped view (set 1 only)', () => {
     const html = render([{ repsMin: '5' }, { repsMin: '5', effortMin: '', effortMax: null }])
     assert.equal(valueOf(html, 'ts-emin-0'), null)
-    assert.equal(valueOf(html, 'ts-emax-0'), null)
     assert.equal(valueOf(html, 'ts-emin-1'), undefined, 'the grouped view draws set 1 only')
   })
-  test('a prescribed effort of 0 shows in the grouped view too', () => {
-    const html = render([{ repsMin: '5', effortType: 'rir', effortMin: 0, effortMax: 0 }])
-    assert.equal(valueOf(html, 'ts-emin-0'), '0'); assert.equal(valueOf(html, 'ts-emax-0'), '0')
+  test('a prescribed effort of 0 shows on a per-set tile too', () => {
+    const html = render([{ repsMin: '5', effortType: 'rir', effortMin: 0, effortMax: 0 }, { repsMin: '5' }], 'weight_reps', true)
+    assert.equal(valueOf(html, 'ts-emin-0'), '0')
   })
 })
 

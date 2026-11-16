@@ -82,7 +82,7 @@ test.describe('editor: sets that match are one group', () => {
     await expect(page.locator('#ts-block-all')).toBeVisible()
     await expect(page.locator('#ts-step-n')).toHaveText('3')
     await expect(page.locator('#ts-rmin-1'), 'only the group\'s first set has fields in this view').toHaveCount(0)
-    await expect(page.locator('#ts-show-each')).toHaveText('Customise each set (3)')
+    await expect(page.locator('#ts-show-each')).toContainText('Customise each set (3)')
     await expect(page.locator('#ts-straight-0')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('#ts-topset-0')).toHaveAttribute('aria-pressed', 'false')
   })
@@ -120,26 +120,31 @@ test.describe('editor: sets that match are one group', () => {
     const mixed = THREE(); mixed[2].repsMin = '5'
     await openEditor(page, mixed)
     await expect(page.locator('#ts-block-all'), 'a difference must never be hidden by the grouped view').toHaveCount(0)
+    // The strength form (2026-11-15): the per-set view is a row of tiles, and the OPEN set is edited in the same grid.
+    await expect(page.locator('#sf-tile-2')).toContainText('5 reps')
+    await page.click('#sf-tile-2')
     await expect(page.locator('#ts-rmin-2')).toHaveValue('5')
     await expect(page.locator('.wb-notice')).toContainText('different targets')
-    await page.click('#ts-make-same')
+    await page.click('#ts-hide-each')
     await expect(page.locator('#ts-block-all')).toBeVisible()
     await save(page)
     await reopen(page)
     expect((await sets(page)).map(x => x.repsMin), 'matching on the first set is a tap the coach made, not something we did silently').toEqual(['8', '8', '8'])
   })
 
-  test('"Customise each set" shows a labelled "Same as set N" button, not a bare arrow', async ({ page }) => {
+  // "Same as set N" went with the per-set cards (2026-11-15): sets are tiles now, "+ Add set" copies the last, and going back makes them match.
+  test('"Customise each set": a tap opens one set, its change stays on that set only, and "+ Add set" copies the last', async ({ page }) => {
     await openEditor(page, THREE())
     await page.click('#ts-show-each')
     await expect(page.locator('#ts-block-all')).toHaveCount(0)
-    const copy = page.getByRole('button', { name: 'Copy set 1 into set 2' })
-    await expect(copy).toBeVisible()
-    await expect(copy).toHaveText('Same as set 1')
-    await page.fill('#ts-rmin-0', '12')
-    await copy.click()
-    await expect(page.locator('#ts-rmin-1'), 'the button copies the set above into this one').toHaveValue('12')
-    await expect(page.locator('#ts-rmin-2'), 'and leaves the others alone').toHaveValue('8')
+    await page.click('#sf-tile-1')
+    await expect(page.locator('#sf-tile-1')).toHaveAttribute('aria-pressed', 'true')
+    await page.fill('#ts-rmin-1', '12')
+    await page.click('#sf-add-set')
+    await expect(page.locator('#sf-tile-3'), 'the added set is the open one').toHaveAttribute('aria-pressed', 'true')
+    await save(page)
+    await reopen(page)
+    expect((await sets(page)).map(x => x.repsMin), 'set 2 changed alone; the added set copied set 3').toEqual(['8', '12', '8', '8'])
   })
 
   test('the AMRAP switch makes the LAST set as-many-reps-as-possible, stays in the group, and saves', async ({ page }) => {
@@ -160,6 +165,7 @@ test.describe('editor: sets that match are one group', () => {
 
   test('the bodyweight switch marks every set and takes the weight box away', async ({ page }) => {
     await openEditor(page, THREE())
+    await page.click('#sf-chip-load')   // the weight lives under More options > Load (2026-11-15)
     await expect(page.locator('#ts-weight-0')).toBeVisible()
     await page.click('#ts-bw-all')
     await expect(page.locator('#ts-bw-all')).toHaveAttribute('aria-pressed', 'true')
@@ -177,39 +183,29 @@ test.describe('editor: top set + back-offs and the "% of" choice', () => {
     await expect(page.locator('#ts-block-top')).toBeVisible()
     await expect(page.locator('#ts-block-back')).toBeVisible()
     await expect(page.locator('#ts-step-n'), 'one back-off set was made').toHaveText('1')
-    const options = await page.locator('#ts-basis-1 option').allTextContents()
-    expect(options).toEqual(['Today\'s top set weight', 'Today\'s estimated 1RM', 'Last session\'s estimated 1RM', 'Last saved 1RM'])
-    await expect(page.locator('#ts-basis-1'), 'a new back-off set starts on the top set weight: no effort or saved 1RM needed').toHaveValue('topSetWeight')
+    // Four buttons now, not a dropdown (2026-11-15).
+    const options = await page.locator('.sf-bases button').allTextContents()
+    expect(options).toEqual(['% of saved 1RM', '% of top set', '% of today\'s e1RM', '% of last session\'s e1RM'])
+    await expect(page.locator('#sf-basis-topSetWeight'), 'a new back-off set starts on the top set weight: no effort or saved 1RM needed').toHaveAttribute('aria-pressed', 'true')
     await expect(page.locator('#ts-basis-help')).not.toBeEmpty()
   })
 
-  test('the worked example shows what each choice gives for the same top set', async ({ page }) => {
+  // The worked example ("Try it: your top set was") is not in the settled design (2026-11-15); each base has its one-line explanation.
+  test('each base explains itself in one line', async ({ page }) => {
     await openEditor(page, [{ repsMin: '4', effortType: 'rpe', effortMin: '7' }])
     await page.click('#ts-topset-0')
-    await page.fill('#ts-imin-1', '70')
-    const calc = page.locator('#ts-example-calc')
-    await page.fill('#ts-example-kg', '100')
-    // 100 kg x 4 at RPE 7 -> an estimated 1RM of about 123 kg.
-    await page.selectOption('#ts-basis-1', 'topSetWeight')
-    await expect(calc).toContainText('70% =')
-    await expect(calc).toContainText('70 kg')
-    await page.selectOption('#ts-basis-1', 'topSet')
-    await expect(calc).toContainText('estimated 1RM')
-    await expect(calc).toContainText('85 kg')
-    await page.selectOption('#ts-basis-1', 'stored')
-    await expect(calc).toContainText('82.5 kg')
-    // Changing the example weight re-works the sentence without touching the saved sets.
-    await page.selectOption('#ts-basis-1', 'topSetWeight')
-    await page.fill('#ts-example-kg', '130')
-    await expect(calc, '70% of 130 is 91, rounded down to the nearest 2.5 as the runner does').toContainText('90 kg')
+    for (const b of ['stored', 'topSetWeight', 'topSet', 'lastBest']) {
+      await page.click('#sf-basis-' + b)
+      await expect(page.locator('#ts-basis-help')).toHaveText(await page.evaluate(x => _intensityBasisHelp(x), b))
+    }
   })
 
-  for (const basis of ['topSetWeight', 'topSet', 'stored']) {
+  for (const basis of ['topSetWeight', 'topSet', 'lastBest', 'stored']) {
     test(`"${basis}" is saved on the back-off set and comes back on reopen`, async ({ page }) => {
       await openEditor(page, [{ repsMin: '3', effortType: 'rpe', effortMin: '8' }])
       await page.click('#ts-topset-0')
       await page.fill('#ts-rmin-1', '8')
-      await page.selectOption('#ts-basis-1', basis)
+      await page.click('#sf-basis-' + basis)
       await page.fill('#ts-imin-1', '70')
       await save(page)
       await reopen(page)
@@ -218,7 +214,7 @@ test.describe('editor: top set + back-offs and the "% of" choice', () => {
       expect(s[1].intensityBasis).toBe(basis)
       expect(Number(s[1].intensityMin)).toBe(70)
       expect(s[1].isTopSet, 'only set 1 is ever the top set').toBeFalsy()
-      await expect(page.locator('#ts-basis-1')).toHaveValue(basis)
+      await expect(page.locator('#sf-basis-' + basis)).toHaveAttribute('aria-pressed', 'true')
       await expect(page.locator('#ts-imin-1')).toHaveValue('70')
     })
   }
@@ -250,15 +246,16 @@ test.describe('editor: top set + back-offs and the "% of" choice', () => {
     expect((await sets(page)).map(x => !!x.amrap)).toEqual([false, false, true])
   })
 
-  test('switching back to straight sets keeps the sets and warns about a back-off that still points at the top set', async ({ page }) => {
+  // Jake, 2026-11-15 ("set 1 sets it"): on Straight sets a "today's" base is valid - set 1 is worked up to, the % applies from set 2.
+  test('switching back to straight sets keeps the sets and the base, and says set 1 sets the weight', async ({ page }) => {
     await openEditor(page, [{ repsMin: '3', effortType: 'rpe', effortMin: '8' }])
     await page.click('#ts-topset-0')
     await page.fill('#ts-imin-1', '70')
-    await page.selectOption('#ts-basis-1', 'topSet')
+    await page.click('#sf-basis-topSet')
     await page.click('#ts-straight-0')
     await expect(page.locator('#ts-straight-0')).toHaveAttribute('aria-pressed', 'true')
-    const text = await page.locator('#att-sets-container').innerText()
-    expect(text, 'the warning names the set, as before').toContain('no longer a top set')
+    await expect(page.locator('#sf-set1-note')).toContainText('Set 1 sets the weight')
+    await expect(page.locator('#ts-imin-1'), 'the group % is shown in the set 2 box').toHaveValue('70')
     const s = await sets(page)
     expect(s.length).toBe(2)
     expect(s[1].intensityBasis, 'nothing was silently rewritten').toBe('topSet')
@@ -268,10 +265,9 @@ test.describe('editor: top set + back-offs and the "% of" choice', () => {
     await openEditor(page, [{ repsMin: '3', effortType: 'rpe', effortMin: '8' }])
     await page.click('#ts-topset-0')
     await expect(page.locator('#ts-weight-0'), 'you choose the weight on the day').toHaveCount(0)
-    await expect(page.locator('#ts-block-top')).toContainText('You choose the weight on the day')
+    await expect(page.locator('#ts-block-top')).toContainText('You log the weight you work up to')
     await expect(page.locator('#ts-topset-effort-warning'), 'an RPE is prescribed, so no warning').toBeHidden()
-    await page.fill('#ts-emin-0', '')
-    await page.fill('#ts-emax-0', '')
+    await page.fill('#ts-emin-0', '')   // Fixed: one box (2026-11-15)
     await page.evaluate(() => _syncTopSetEffortWarning())
     await expect(page.locator('#ts-topset-effort-warning'), 'no effort on a top set is called out').toBeVisible()
   })

@@ -117,6 +117,12 @@ Prototype: https://claude.ai/artifact/8rj3Xvn8Q6WJbX8x7P6rei (private). Changed 
 
 - **Every % option shows on both pages** (Straight sets and Top set + back-offs). On Straight sets "% of e1RM" comes from that
   exercise's best set last session. My reading, to confirm: "% of today's top set" on Straight sets = % of set 1's weight today.
+- **On Straight sets, a "today's" base makes set 1 set the weight** (Jake, 2026-11-15, "Yes, set 1 sets it"): choosing "% of
+  today's top set" or "% of today's e1RM" there means set 1 is worked up to with no %, and the % applies to sets 2 onwards; the
+  form says so in one line. "% of saved 1RM" and "% of last session's e1RM" apply to every set.
+- **Bodyweight is a More options chip** (Jake, 2026-11-15), beside Unilateral and Last set AMRAP. Today's form has a "Bodyweight
+  exercise · BW" switch, the only thing that marks an exercise bodyweight (the logger's BW box, reps charts); the settled chip list
+  had no place for it. On = no weight box, as today.
 - **Exercise types are a separate, later session.** This release finishes the builder as scoped; Timed hold, jumps and
   Intervals keep today's form.
 

@@ -1712,6 +1712,63 @@ a.cockpit-btn { padding: 0 14px; border: 1px solid var(--border); border-radius:
 .wb-eff:last-child { border-radius:0 var(--radius-sm) var(--radius-sm) 0; border-left:none; }
 .wb-eff[aria-pressed="true"] { border-color:var(--accent); background:var(--accent); color:var(--on-accent); }
 
+/* ─── The strength form (Step B, 2026-11-15) ────────────────────────────────────────────────────────────────────────────
+   Settled in docs/superpowers/specs/2026-11-11-add-exercise-sheet-scope.md, shaped on the tappable prototype. Two fields per row, each one
+   column: label, Fixed / Range switch centred over its own box, the box; a field with no switch keeps an empty switch row so the boxes line
+   up. Every box the same height. The footer is pinned to the bottom of the sheet (Jake, 2026-11-15). Tokens only (the style-literal ratchet). */
+.modal.sf-sheet { max-width:480px; }
+@media (min-width: 900px) { .modal.sf-sheet { max-width:560px; } }
+.sf-sheet .modal-footer { position:sticky; bottom:-26px; z-index:2; background:var(--surface); margin:16px -26px -26px; padding:12px 26px calc(12px + env(safe-area-inset-bottom)); box-shadow:0 -8px 16px -10px var(--shadow-color, rgba(0,0,0,.35)); flex-wrap:wrap; }
+.sf-sec { display:grid; gap:10px; margin-bottom:14px; }
+.sf-sec.sf-line { border-top:1px solid var(--border); padding-top:14px; }
+.sf-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+.sf-head b { font-size:var(--text-lg); }
+.sf-head span { font-size:var(--text-md); color:var(--text-muted); }
+.sf-lab { margin:0; font-size:var(--text-base); font-weight:500; color:var(--text); }
+.sf-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:14px 16px; }
+.sf-fld { display:grid; gap:6px; align-content:start; min-width:0; }
+.sf-pills { display:flex; justify-content:center; min-height:30px; }
+.sf-pills.sf-under { min-height:0; }
+.sf-fr { display:inline-flex; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+.sf-fr button { min-height:30px; padding:2px 12px; font-size:var(--text-md); font-weight:600; color:var(--text-muted); background:var(--surface); cursor:pointer; border:0; }
+.sf-fr button + button { border-left:1px solid var(--border); }
+.sf-fr button[aria-pressed="true"] { background:var(--accent); color:var(--on-accent); }
+.sf-box { width:100%; min-width:0; height:46px; text-align:center; font-size:var(--text-xl); font-weight:700; }
+.sf-two { display:grid; grid-template-columns:minmax(0, 1fr) auto minmax(0, 1fr); align-items:start; gap:4px; }
+.sf-dash { color:var(--text-muted); align-self:center; }
+.sf-rest { display:grid; grid-template-columns:40px minmax(0, 1fr) 40px; align-items:center; height:46px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface); overflow:hidden; }
+.sf-rest .sf-rest-in { border:0; height:44px; text-align:center; font-size:var(--text-xl); font-weight:700; min-width:0; padding:0; background:transparent; }
+.sf-rest-end { display:grid; gap:4px; }
+.sf-rest-end .sf-rest-in { height:46px; text-align:center; font-size:var(--text-xl); font-weight:700; min-width:0; padding:0 2px; }
+.sf-pmrow { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+.sf-pm { min-height:40px; font-size:var(--text-2xl); line-height:1; color:var(--accent); background:var(--surface); border:0; cursor:pointer; }
+.sf-pmrow .sf-pm { border:1px solid var(--border); border-radius:var(--radius-sm); min-height:36px; }
+.sf-step { height:46px; }
+.sf-step button:disabled { color:var(--text-muted); opacity:.35; cursor:default; }
+.sf-row { display:flex; justify-content:space-between; align-items:center; width:100%; min-height:48px; padding:0 14px; margin-bottom:14px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface); color:var(--text); font-size:var(--text-lg); font-weight:600; cursor:pointer; text-align:left; }
+.sf-back { justify-content:center; gap:6px; margin:6px 0 4px; color:var(--accent); }
+.sf-tiles { display:flex; gap:8px; overflow-x:auto; padding-bottom:4px; }
+.sf-tile { flex:0 0 auto; min-width:76px; min-height:44px; display:grid; gap:2px; padding:8px 10px; border:1.5px solid var(--border); border-radius:var(--radius-md); background:var(--surface); color:var(--text-muted); font-size:var(--text-md); text-align:center; cursor:pointer; }
+.sf-tile b { color:var(--text); font-size:var(--text-base); }
+.sf-tile[aria-pressed="true"] { border-color:var(--accent); background:var(--accent-light); }
+.sf-setname { display:flex; align-items:center; justify-content:space-between; gap:6px; height:46px; padding:0 6px 0 12px; border:1.5px solid var(--accent); border-radius:var(--radius-sm); background:var(--accent-light); font-weight:700; font-size:var(--text-lg); }
+.sf-x { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:var(--danger-light); color:var(--danger-text); font-size:var(--text-xl); font-weight:700; line-height:1; cursor:pointer; }
+.sf-add { justify-self:start; min-height:44px; padding:0 16px; border-radius:22px; background:var(--accent-light); color:var(--accent); font-weight:600; font-size:var(--text-base); cursor:pointer; margin-bottom:6px; }
+.sf-chips { display:flex; flex-wrap:wrap; gap:8px; }
+.sf-chip { min-height:40px; padding:0 14px; border-radius:20px; border:0; background:var(--surface-2); color:var(--accent); font-size:var(--text-base); font-weight:500; cursor:pointer; }
+.sf-chip#sf-chip-type { color:var(--text-muted); }
+.sf-chip[aria-pressed="true"] { background:var(--accent-light); font-weight:700; }
+.sf-bases { display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
+.sf-bases button { min-height:44px; padding:4px 6px; font-size:var(--text-md); line-height:1.2; color:var(--text-muted); background:var(--surface); border:0; border-right:1px solid var(--border); border-bottom:1px solid var(--border); cursor:pointer; }
+.sf-bases button:nth-child(2n) { border-right:0; }
+.sf-bases button:nth-child(n+3) { border-bottom:0; }
+.sf-bases button[aria-pressed="true"] { background:var(--accent); color:var(--on-accent); font-weight:700; }
+.sf-opt { display:grid; gap:10px; padding:12px; border:1px solid var(--border); border-radius:var(--radius-md); }
+.sf-opt-head { display:flex; justify-content:space-between; align-items:center; }
+.sf-label-x { display:flex; justify-content:space-between; align-items:center; }
+.sf-copied { margin:0 0 10px; }
+.sf-tag { font-style:normal; font-weight:700; font-size:var(--text-sm); color:var(--accent); }
+
 /* The workout page's exercise cards: one short summary per exercise, the whole card is the Edit button. */
 .tpl-ex-main { display:flex; gap:10px; align-items:flex-start; width:100%; min-height:44px; padding:12px; background:transparent; border:0; border-radius:var(--radius-lg); color:inherit; font:inherit; text-align:left; cursor:pointer; }
 .tpl-ex-main:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

@@ -429,8 +429,25 @@ const _AMRAP_TYPES = new Set(['weight_reps', 'unilateral'])
 // must stay limited to the two types sharing the weight+reps set shape.
 const _BW_TYPES = new Set(['weight_reps', 'unilateral', 'timed_hold'])
 
+// The range rule (Jake, 2026-11-13; bug 2026-11-13-a-range-can-be-saved-with-its-high-end-below-its-low-end): on every range the
+// right end is never below the left. The form keeps it while typing (sfTyped, sfRestStep); this is the save-side guarantee for
+// every type, so a range typed any other way (the per-set cards, a hand-edited row) cannot be saved upside down either. Pure.
+/** @type {Array<[string, string, (v: any) => number]>} */
+const _RANGE_PAIRS = [['repsMin', 'repsMax', parseFloat], ['effortMin', 'effortMax', parseFloat], ['intensityMin', 'intensityMax', parseFloat], ['restMin', 'restMax', v => (typeof v === 'number' ? v : parseRest(v))]]
+function _rangeInOrder(s) {
+  if (!s || typeof s !== 'object') return s
+  let out = s
+  for (const [lo, hi, num] of _RANGE_PAIRS) {
+    if (!_hasNumVal(s[lo]) || !_hasNumVal(s[hi])) continue
+    const a = num(s[lo]), b = num(s[hi])
+    if (lo === 'restMin' && !b) continue   // a high end of 0:00 is the old editor's "not set", not an upside-down range
+    if (Number.isFinite(a) && Number.isFinite(b) && b < a) { if (out === s) out = { ...s }; out[hi] = s[lo] }
+  }
+  return out
+}
+
 function _cleanTemplateSets(sets, derived, metricType) {
-  return (sets || []).map((s, i) => {
+  return (sets || []).map(_rangeInOrder).map((s, i) => {
   // A top set exists ONLY on row 0: the runner reads sets_json[0].isTopSet, the builder renders the
   // TOP SET pill only for i === 0, and topSetActive reads _templateSets[0]. The raw per-row flag is
   // NOT that fact — "Copy previous set" and the per-row sync button copy a whole row, flag included,
@@ -1959,6 +1976,8 @@ function flushTemplateSets(containerId) {
   // The grouped set editor (2026-10-28) draws only the FIRST set of each group, so copy it onto the rest: with a top set the back-offs (set 2
   // onwards) follow set 2, otherwise every set follows set 1. Per-set cards (the default for every other type) are untouched.
   const host = document.getElementById(containerId)
+  // The strength form (2026-11-15): a field on Fixed has one box, so its high end is set to its low end; a Range keeps both, in order.
+  if (host?.dataset.sf === '1') _sfApplyFixed(host)
   if (host && host.dataset.tsView === 'uniform') _tsPropagate(window._templateSets, host.dataset.tsTop === '1')
 }
 
@@ -2058,13 +2077,29 @@ function _tsGroupStart(topMode) { return topMode ? 1 : 0 }
 // True when the grouped view can show the group as ONE row without hiding a difference: every set of the group carries the same shared
 // fields, and only the LAST set may be AMRAP (the "3 × 8, then 1 × AMRAP" idiom has its own switch in the grouped view; an AMRAP set anywhere
 // else would be hidden by it). A top set cannot be AMRAP or bodyweight in the grouped view (neither switch is drawn on it).
-function _tsGroupUniform(sets, topMode) {
+function _tsGroupUniform(sets, topMode, type = 'weight_reps') {
   const list = Array.isArray(sets) ? sets : []
   if (!list.length) return true
   if (topMode && (list[0]?.amrap || list[0]?.bodyweight)) return false
   const g = list.slice(_tsGroupStart(topMode))
   if (!g.length) return true
-  return g.every((s, i) => (i === g.length - 1 || !s?.amrap) && _TS_SHARED.every(k => _tsVal(s, k) === _tsVal(g[0], k)))
+  // Straight sets on a "today's" base (Jake, 2026-11-15: "set 1 sets it"): set 1 is worked up to and carries no %, sets 2 on carry it.
+  // That difference is the design, not a customised set, so set 1's percentage is left out of the comparison.
+  const set1Sets = _sfSet1Shape(list, topMode, type)
+  const pctKey = k => _SF_PCT_KEYS.has(k)   // set 1 carries no % and so no base of its own
+  return g.every((s, i) => (i === g.length - 1 || !s?.amrap) && _TS_SHARED.every(k =>
+    set1Sets && pctKey(k) ? (i === 0 || _tsVal(s, k) === _tsVal(g[1], k)) : _tsVal(s, k) === _tsVal(g[0], k)))
+}
+
+// Straight sets whose percentage is of a "today's" base (today's top set weight or e1RM): set 1 is the set the weight comes from.
+const _SF_PCT_KEYS = new Set(['intensityMin', 'intensityMax', 'intensityBasis'])
+// The full "set 1 sets the weight" shape: a "today's" base on the later sets AND no % on set 1. An older row whose set 1 carries its own
+// % is NOT this shape: it stays one set at a time, untouched (review, 2026-11-15).
+function _sfSet1Shape(sets, topMode, type = 'weight_reps') {
+  return _sfSet1SetsIt(sets, topMode, type) && !_hasNumVal(sets[0]?.intensityMin) && !_hasNumVal(sets[0]?.intensityMax)
+}
+function _sfSet1SetsIt(sets, topMode, type = 'weight_reps') {
+  return type === 'weight_reps' && !topMode && Array.isArray(sets) && sets.length > 1 && _isTopSetBasis(_tsVal(sets[1], 'intensityBasis'))
 }
 
 // Copies the group's first set onto the rest of the group. Called by flushTemplateSets while the grouped view is on screen (only the first
@@ -2074,10 +2109,16 @@ function _tsPropagate(sets, topMode) {
   const start = _tsGroupStart(topMode)
   const src = sets?.[start]
   if (!src) return sets
+  // Straight sets where set 1 sets the weight: the group's %, and its base, live on SET 2 (set 1 has none), so they are copied from
+  // set 2, never from set 1 - copying set 1's empty % or default base on would wipe or re-base every later set (multi-agent review,
+  // 2026-11-15: a tap on RPE/RIR emptied them; an untouched old row was saved as "% of saved 1RM").
+  const s1 = _sfSet1Shape(sets, topMode)
   for (let i = start + 1; i < sets.length; i++) {
-    for (const k of _TS_SHARED) sets[i][k] = src[k]
+    for (const k of _TS_SHARED) { if (!(s1 && _SF_PCT_KEYS.has(k))) sets[i][k] = src[k] }
+    if (s1 && i > 1) for (const k of _SF_PCT_KEYS) sets[i][k] = sets[1][k]
     if (i !== sets.length - 1) sets[i].amrap = false
   }
+  if (s1) sets[0].intensityBasis = sets[1].intensityBasis   // one base for the exercise, shown once
   return sets
 }
 
@@ -2292,9 +2333,396 @@ function _tsGroupedHtml({ containerId, topMode, sets, ui }) {
     </div>`
 }
 
+// ─── THE STRENGTH FORM (Step B, 2026-11-15) ───────────────────────────────────────────────────────────────────
+// docs/superpowers/specs/2026-11-11-add-exercise-sheet-scope.md is the settled list this is built to; the tappable prototype Jake shaped it on is
+// https://claude.ai/artifact/8rj3Xvn8Q6WJbX8x7P6rei. Weight & reps and Unilateral only: every other type keeps the editor below.
+//   - Straight sets | Top set + back-offs at the top; then Sets | Reps over Effort | Rest, each field one column (label, Fixed / Range
+//     switch, box), the switch centred over its own box; RPE / RIR under Effort; Rest typed or − / + 30 s (each range end its own).
+//   - "Customise each set (n)" opens a row of set tiles; the open set is edited in the SAME grid; "‹ Back to the same for every set".
+//   - More options: Type, Load, Tempo, Countdown, Notes, Last set AMRAP, Unilateral, Bodyweight; each added box has the red ✕.
+// Every input keeps the id the old editor used (ts-rmin-0, ts-emin-1 ...), so flushTemplateSets, the save path and sets_json are unchanged:
+// this is a new face on the same data. UI-only state (Fixed/Range, open chips, the open tile) lives in _sfWin._sfUi and never reaches sets_json.
+
+// Typed handles for the form's globals and boxes: the type ratchet (scripts/check-types.mjs) counts every untyped _sfWin.x / el.value.
+const _sfWin = /** @type {any} */ (window)
+const _sfEl = id => /** @type {any} */ (document.getElementById(id))
+
+const _SF_FIELDS = { reps: ['repsMin', 'repsMax'], effort: ['effortMin', 'effortMax'], rest: ['restMin', 'restMax'], pct: ['intensityMin', 'intensityMax'] }
+const _SF_IDS = { reps: ['ts-rmin', 'ts-rmax'], effort: ['ts-emin', 'ts-emax'], rest: ['ts-restmin', 'ts-restmax'], pct: ['ts-imin', 'ts-imax'] }
+const _SF_NUM = { reps: v => parseFloat(v), effort: v => parseFloat(v), rest: v => parseRest(v), pct: v => parseFloat(v) }
+
+function _sfUiState() { return _sfWin._sfUi || (_sfWin._sfUi = { custom: false, sel: 0, range: {}, chips: {} }) }
+function _sfIsStrength(type) { return type === 'weight_reps' || type === 'unilateral' }
+
+// Range or Fixed for one field of one set: what the coach chose, else what the data says (two different ends = a range).
+function _sfIsRange(key, i) {
+  const ui = _sfUiState(), k = `${key}:${i}`
+  if (k in ui.range) return !!ui.range[k]
+  const s = _sfWin._templateSets?.[i] || {}
+  const [a, b] = _SF_FIELDS[key]
+  if (!_hasNumVal(s[a]) || !_hasNumVal(s[b])) return false
+  if (key === 'rest') return !!parseRest(s[b]) && parseRest(s[a]) !== parseRest(s[b])   // the old editor's default high end '0:00' is "not set"
+  return String(s[a]) !== String(s[b])
+}
+
+// Called by flushTemplateSets: every field the form drew on Fixed gets its high end set to its low end.
+function _sfApplyFixed(host) {
+  const sets = _sfWin._templateSets || []
+  for (const i of (host.dataset.sfIdx || '').split(',').filter(Boolean).map(Number)) {
+    const s = sets[i]
+    if (!s) continue
+    for (const key of Object.keys(_SF_FIELDS)) {
+      const [a, b] = _SF_FIELDS[key]
+      if (!_sfEl(`${_SF_IDS[key][0]}-${i}`)) continue   // not drawn for this set: leave it exactly as it is
+      // Fixed is what was ON SCREEN: one box, no high-end box. Never re-derived from the data here: the low end has just been read
+      // from the box, so "8" edited to "5" would look like a 5-8 range and keep the stale 8 (caught by workout-builder-2026-10-28).
+      if (!_sfEl(`${_SF_IDS[key][1]}-${i}`)) s[b] = s[a]
+    }
+    Object.assign(s, _rangeInOrder(s))
+  }
+}
+
+// Fixed / Range tapped. Range starts with both ends at the current value; Fixed keeps the low end.
+function sfSetRange(key, i, on, containerId) {
+  flushTemplateSets(containerId)
+  _sfUiState().range[`${key}:${i}`] = !!on
+  const s = _sfWin._templateSets?.[i]
+  const [a, b] = _SF_FIELDS[key]
+  if (s && !on) s[b] = s[a]
+  if (s && on && !_hasNumVal(s[b])) s[b] = s[a]
+  _tsRerender(containerId)
+}
+
+// A range end was TYPED: the typed value stays and the other end moves to match it (Jake's range rule, my call on how). In place, no
+// re-render: re-drawing on change would drop the focus the coach is tabbing to.
+function sfTyped(key, i, end) {
+  const [ia, ib] = _SF_IDS[key]
+  const lo = _sfEl(`${ia}-${i}`), hi = _sfEl(`${ib}-${i}`)
+  if (!lo || !hi || lo.value === '' || hi.value === '') return
+  const num = _SF_NUM[key], a = num(lo.value), b = num(hi.value)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b >= a) return
+  if (end === 'min') hi.value = lo.value
+  else lo.value = hi.value
+}
+
+// Rest − / + 30 s. On a range each end steps on its own and stops at the other end.
+function sfRestStep(i, end, delta, containerId) {
+  flushTemplateSets(containerId)
+  const s = _sfWin._templateSets?.[i]
+  if (!s) return
+  const range = _sfIsRange('rest', i)
+  const cur = parseRest(end === 'max' ? s.restMax : s.restMin) || 0
+  let next = Math.max(0, cur + delta)
+  if (range && end === 'min') next = Math.min(next, parseRest(s.restMax) || 0)
+  if (range && end === 'max') next = Math.max(next, parseRest(s.restMin) || 0)
+  const txt = fmtRestCountdown(next)
+  if (!range) { s.restMin = txt; s.restMax = txt }
+  else if (end === 'max') s.restMax = txt
+  else s.restMin = txt
+  _tsRerender(containerId)
+}
+
+// The percentage base, one choice for the group (Top set + back-offs: every back-off; Straight sets: every set).
+function sfBasis(b, containerId) {
+  flushTemplateSets(containerId)
+  const sets = _sfWin._templateSets || []
+  const top = !!sets[0]?.isTopSet
+  const from = _tsGroupStart(top)
+  // Leaving a "today's" base on Straight sets: set 1 gets back the % it gave up (set 1 no longer sets the weight).
+  const type = _sfEl(_tsTid(containerId))?.value
+  const was = !top && _sfSet1SetsIt(sets, false, type)
+  for (let i = from; i < sets.length; i++) sets[i].intensityBasis = b
+  const now = !top && _sfSet1SetsIt(sets, false, type)
+  if (was && !now && sets[1]) { sets[0].intensityMin = sets[1].intensityMin; sets[0].intensityMax = sets[1].intensityMax }   // set 1 gets its % back
+  if (!was && now) {   // set 1 now sets the weight: the group's % moves to set 2 onwards, set 1 keeps none
+    for (let i = 1; i < sets.length; i++) if (!_hasNumVal(sets[i].intensityMin) && !_hasNumVal(sets[i].intensityMax)) { sets[i].intensityMin = sets[0].intensityMin; sets[i].intensityMax = sets[0].intensityMax }
+    sets[0].intensityMin = ''; sets[0].intensityMax = ''
+  }
+  _tsRerender(containerId)
+}
+
+// The open tile in "Customise each set".
+function sfSelect(i, containerId) {
+  flushTemplateSets(containerId)
+  _sfUiState().sel = i
+  _tsRerender(containerId)
+}
+
+function sfAddSet(containerId) {
+  flushTemplateSets(containerId)
+  const sets = _sfWin._templateSets || (_sfWin._templateSets = [])
+  const last = sets[sets.length - 1]
+  // "+ Add set" copies the last set (my call, kept 2026-11-14). A copied top set is a back-off, never a second top set.
+  sets.push(last ? { ...last, isTopSet: false, amrap: false } : { effortType: 'rpe' })
+  _sfUiState().sel = sets.length - 1
+  _tsRerender(containerId)
+}
+
+function sfDeleteSet(i, containerId) {
+  flushTemplateSets(containerId)
+  const sets = _sfWin._templateSets || []
+  if (sets.length <= 1 || (i === 0 && sets[0]?.isTopSet)) return   // never the last set, never the top set
+  sets.splice(i, 1)
+  const ui = _sfUiState()
+  ui.sel = Math.min(ui.sel, sets.length - 1)
+  const shifted = {}
+  for (const [k, on] of Object.entries(ui.range)) {
+    const [key, n] = k.split(':'); const j = Number(n)
+    if (j < i) shifted[k] = on
+    else if (j > i) shifted[`${key}:${j - 1}`] = on
+  }
+  ui.range = shifted
+  _tsRerender(containerId)
+}
+
+// More options. `on` opens a chip's box; the red ✕ (sfChipOff) closes it AND clears what it held, so a closed chip never hides a value.
+function sfChip(k, containerId) {
+  flushTemplateSets(containerId)
+  const ui = _sfUiState()
+  ui.chips[k] = true
+  if (k === 'type' || k === 'notes') _sfShellFields(_sfEl(_tsTid(containerId))?.value)
+  _tsRerender(containerId)
+  const focusId = { tempo: 'ts-tempo-0', countdown: 'ts-cd-0', notes: 'att-notes', type: 'att-type' }[k]
+  if (focusId) _sfEl(focusId)?.focus()
+}
+
+function sfChipOff(k, containerId) {
+  flushTemplateSets(containerId)
+  const ui = _sfUiState()
+  ui.chips[k] = false
+  const sets = _sfWin._templateSets || []
+  if (k === 'load' && sets[0]?.isTopSet) sets.forEach(s => { s.weight = '' })
+  else if (k === 'load') { sets.forEach(s => { s.weight = ''; s.intensityMin = ''; s.intensityMax = ''; s.intensityBasis = 'stored' }); ui.loadMode = null }
+  if (k === 'tempo') sets.forEach(s => { s.tempo = '' })
+  if (k === 'countdown') sets.forEach(s => { s.countdown = '' })
+  if (k === 'notes') { const n = _sfEl('att-notes'); if (n) n.value = '' }
+  if (k === 'type' || k === 'notes') _sfShellFields(_sfEl(_tsTid(containerId))?.value)
+  _tsRerender(containerId)
+}
+
+// Load: a weight in kg, or a percentage of a base.
+function sfLoadMode(mode, containerId) {
+  flushTemplateSets(containerId)
+  const ui = _sfUiState()
+  ui.loadMode = mode
+  const sets = _sfWin._templateSets || []
+  if (mode === 'kg') sets.forEach(s => { s.intensityMin = ''; s.intensityMax = '' })
+  else sets.forEach(s => { s.weight = '' })
+  _tsRerender(containerId)
+}
+
+// The modal's own Type and Notes fields: shown for every other type as before; on the strength form only once their chip is added
+// (or a note already exists - a hidden value is a lost value).
+function _sfShellFields(type) {
+  const ui = _sfUiState()
+  const strength = _sfIsStrength(type)
+  const typeField = _sfEl('att-type-field')
+  if (typeField) typeField.style.display = strength && !ui.chips.type ? 'none' : ''
+  const notesField = _sfEl('att-notes-field')
+  const hasNote = !!_sfEl('att-notes')?.value.trim()
+  if (notesField) notesField.style.display = strength && !ui.chips.notes && !hasNote ? 'none' : ''
+  const pills = _sfEl('att-metric-pills')
+  if (pills) pills.style.display = strength ? 'none' : ''
+  const notesX = _sfEl('sf-x-notes')
+  if (notesX) notesX.style.display = strength ? '' : 'none'
+}
+
+// Desktop: Enter in a box adds the exercise; in the builder it adds and reopens the picker ("Add another"), as the plan says.
+function sfEnter(e) {
+  if (e.key !== 'Enter' || e.isComposing || e.repeat || e.target?.tagName !== 'INPUT') return
+  if (_sfEl('att-sets-container')?.dataset.sf !== '1' || e.target.id === 'att-superset') return
+  const another = _sfEl('att-add-another')
+  const btn = another || _sfEl('att-confirm-btn')
+  if (!btn) return
+  e.preventDefault()
+  btn.click()
+}
+
+// What a new exercise starts from: the previous exercise's sets, reps, effort and rest (settled point 5). A top-set exercise passes on its
+// BACK-OFF sets (the prototype's rule). Pure: returns { sets, from } or null.
+function _sfStartFromPrevious(prevRow) {
+  const mt = prevRow?.metric_type
+  const list = Array.isArray(prevRow?.sets_json) ? prevRow.sets_json : []
+  if (!_sfIsStrength(mt) || !list.length) return null
+  const src = list[0]?.isTopSet ? list.slice(1) : list
+  if (!src.length) return null
+  const pick = s => ({ effortType: s.effortType || 'rpe', repsMin: s.repsMin ?? '', repsMax: s.repsMax ?? '', effortMin: s.effortMin ?? '', effortMax: s.effortMax ?? '', restMin: s.restMin ?? '', restMax: s.restMax ?? '' })
+  return { sets: src.map(pick), from: prevRow.exercise_name || '' }
+}
+
+function _sfRender(container, containerId, type) {
+  const ui = _sfUiState()
+  const sets = _sfWin._templateSets && _sfWin._templateSets.length ? _sfWin._templateSets : (_sfWin._templateSets = [{ effortType: 'rpe' }])
+  const top = type === 'weight_reps' && !!sets[0]?.isTopSet
+  const tid = _tsTid(containerId)
+  const esc = escapeHtml
+  const cid = containerId
+  const uniform = _tsGroupUniform(sets, top, type)
+  const hasGroup = sets.length > _tsGroupStart(top)
+  const s1 = _sfSet1Shape(sets, top, type)
+  const custom = !!_sfWin._tsView?.custom || !uniform || !hasGroup
+  if (ui.sel >= sets.length) ui.sel = sets.length - 1
+  const drawn = []   // the set indices whose boxes are on screen, for _sfApplyFixed
+
+  const v = x => (_hasNumVal(x) ? ` value="${esc(String(x))}"` : '')
+  const fld = (label, pills, box, under = '', id = '') => `<div class="sf-fld"${id ? ` id="${id}"` : ''}><p class="sf-lab">${label}</p><div class="sf-pills">${pills}</div>${box}${under}</div>`
+  const frPills = (key, i, label) => {
+    const r = _sfIsRange(key, i)
+    return `<div class="sf-fr" role="group" aria-label="${label}: fixed or range"><button type="button" id="sf-${key}-fixed-${i}" aria-pressed="${!r}" onclick="sfSetRange('${key}',${i},false,'${cid}')">Fixed</button><button type="button" id="sf-${key}-range-${i}" aria-pressed="${r}" onclick="sfSetRange('${key}',${i},true,'${cid}')">Range</button></div>`
+  }
+  const numBox = (key, i, attrs, label, srcIdx = i) => {
+    const [a, b] = _SF_FIELDS[key], [ia, ib] = _SF_IDS[key], s = sets[srcIdx] || {}
+    // Fixed shows the low end, or the high end when only that was ever stored (an old "up to 8" row): never an empty box over a real value.
+    if (!_sfIsRange(key, i)) return `<input id="${ia}-${i}" class="field-input sf-box" aria-label="${label}" ${attrs}${v(_hasNumVal(s[a]) ? s[a] : s[b])}>`
+    return `<div class="sf-two"><input id="${ia}-${i}" class="field-input sf-box" aria-label="${label} from" ${attrs} onchange="sfTyped('${key}',${i},'min')"${v(s[a])}><span class="sf-dash" aria-hidden="true">–</span><input id="${ib}-${i}" class="field-input sf-box" aria-label="${label} to" ${attrs} onchange="sfTyped('${key}',${i},'max')"${v(s[b])}></div>`
+  }
+  const REPS = 'type="number" inputmode="numeric" min="0" placeholder="—"'
+  const EFF = 'type="number" inputmode="decimal" step="0.5" min="0" max="10" placeholder="—"'
+  const PCT = 'type="number" inputmode="decimal" min="0" placeholder="—"'
+  const restIn = (i, end) => {
+    const val = end === 'max' ? sets[i].restMax : (_sfIsRange('rest', i) ? sets[i].restMin : (_hasTimeTarget(sets[i].restMin) ? sets[i].restMin : sets[i].restMax))
+    const id = end === 'max' ? `ts-restmax-${i}` : `ts-restmin-${i}`
+    return `<input id="${id}" class="field-input sf-rest-in" type="text" inputmode="numeric" aria-label="Rest${_sfIsRange('rest', i) ? (end === 'max' ? ' to' : ' from') : ''}" placeholder="0:00" oninput="this.value=fmtRestInput(this.value)"${_sfIsRange('rest', i) ? ` onchange="sfTyped('rest',${i},'${end}')"` : ''} value="${esc(String(val || '0:00'))}">`
+  }
+  const pm = (i, end, d) => `<button type="button" class="sf-pm" id="sf-rest-${d < 0 ? 'dec' : 'inc'}-${end}-${i}" aria-label="${d < 0 ? '30 seconds less' : '30 seconds more'}${_sfIsRange('rest', i) ? (end === 'max' ? ' (to)' : ' (from)') : ''}" onclick="sfRestStep(${i},'${end}',${d},'${cid}')">${d < 0 ? '−' : '+'}</button>`
+  const restBox = i => _sfIsRange('rest', i)
+    ? `<div class="sf-two"><div class="sf-rest-end">${restIn(i, 'min')}<div class="sf-pmrow">${pm(i, 'min', -30)}${pm(i, 'min', 30)}</div></div><span class="sf-dash" aria-hidden="true">–</span><div class="sf-rest-end">${restIn(i, 'max')}<div class="sf-pmrow">${pm(i, 'max', -30)}${pm(i, 'max', 30)}</div></div></div>`
+    : `<div class="sf-rest">${pm(i, 'min', -30)}${restIn(i, 'min')}${pm(i, 'min', 30)}</div>`
+  const effSeg = i => `<div class="sf-pills sf-under"><div class="sf-fr" role="group" aria-label="Effort scale"><button type="button" class="wb-eff" aria-pressed="${(sets[i].effortType || 'rpe') === 'rpe'}" onclick="setTsEffort(${i},'rpe','${cid}')">RPE</button><button type="button" class="wb-eff" aria-pressed="${sets[i].effortType === 'rir'}" onclick="setTsEffort(${i},'rir','${cid}')">RIR</button></div></div>`
+  const stepper = () => `<div class="wb-step sf-step"><button type="button" id="ts-step-dec" aria-label="One fewer set" onclick="tsStep(-1,'${cid}')">−</button><output id="ts-step-n" aria-live="polite">${sets.length - _tsGroupStart(top)}</output><button type="button" id="ts-step-inc" aria-label="One more set" onclick="tsStep(1,'${cid}')">+</button></div>`
+  const fixedOne = `<div class="wb-step sf-step" aria-label="Top set: always 1 set"><button type="button" disabled aria-hidden="true">−</button><output>1</output><button type="button" disabled aria-hidden="true">+</button></div>`
+  const effortSync = i => (i === 0 ? ' oninput="_syncTopSetEffortWarning()"' : '')
+  const fourFields = (i, setsCell) => {
+    drawn.push(i)
+    return `<div class="sf-grid">
+      ${setsCell}
+      ${fld('Reps', frPills('reps', i, 'Reps'), numBox('reps', i, REPS, 'Reps'))}
+      ${fld('Effort', frPills('effort', i, 'Effort'), numBox('effort', i, EFF + effortSync(i), 'Effort'), effSeg(i))}
+      ${fld('Rest', frPills('rest', i, 'Rest'), restBox(i))}
+    </div>`
+  }
+  const BASES = [['stored', '% of saved 1RM'], ['topSetWeight', top ? '% of top set' : "% of set 1's weight"], ['topSet', "% of today's e1RM"], ['lastBest', "% of last session's e1RM"]]
+  const baseSeg = (b) => type !== 'weight_reps' ? '' : `<div class="sf-bases" role="group" aria-label="Percentage of">${BASES.map(([k, l]) => `<button type="button" id="sf-basis-${k}" aria-pressed="${b === k}" onclick="sfBasis('${k}','${cid}')">${l}</button>`).join('')}</div>`
+  const pctField = (i, srcIdx = i) => fld('Percentage', frPills('pct', i, 'Percentage'), numBox('pct', i, PCT, 'Percentage', srcIdx), '', 'sf-pct-field')
+
+  // ── the head: the two-way switch (weight & reps only: no top set on a unilateral exercise)
+  let html = ''
+  if (type === 'weight_reps') {
+    html += `<div class="sf-sec"><p class="sf-lab">How are the sets set up?</p><div class="wb-seg" role="group" aria-label="Set structure">
+      <button type="button" id="ts-straight-0" aria-pressed="${!top}" onclick="tsSetStructure('straight','${cid}')">Straight sets</button>
+      <button type="button" id="ts-topset-0" aria-pressed="${top}" onclick="tsSetStructure('top','${cid}')">Top set + back-offs</button></div></div>`
+  }
+  if (type !== 'weight_reps' && sets.some(x => _isLiveBasis(x?.intensityBasis) && (_hasNumVal(x?.intensityMin) || _hasNumVal(x?.intensityMax)))) {
+    const n = sets.map((x, i) => (_isLiveBasis(x?.intensityBasis) ? i + 1 : null)).filter(Boolean).join(', ')
+    html += `<div class="wb-notice" id="sf-basis-unsupported">Set ${n} is a % of today's top set or last session, which a unilateral exercise does not have. It will be saved as a % of the saved 1RM.</div>`
+  }
+  if (top || (s1 && _tsVal(sets[1], 'intensityBasis') === 'topSet')) {
+    const s0 = sets[0]
+    const effSet = [s0?.effortMin, s0?.effortMax].some(_hasNumVal)
+    html += `<div id="ts-topset-effort-warning" class="wb-notice"${effSet ? ' style="display:none"' : ''}>Set 1 ${top ? 'is a top set' : 'sets the weight'} but has no ${s0?.effortType === 'rir' ? 'RIR' : 'RPE'} prescribed. Without one the runner cannot estimate a 1RM and any set using "% of today's e1RM" will have no target.</div>`
+  }
+
+  // ── the body: same-for-every-set, or Customise each set
+  const loadOn = top
+    ? !!(ui.chips.load || sets.slice(1).some(s => s.weight))
+    : !!(ui.chips.load || sets.some(s => s.weight || _hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)))
+  const loadMode = ui.loadMode || (sets.some(s => _hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)) ? 'pct' : sets.some(s => s.weight) ? 'kg' : 'kg')
+  if (!custom) {
+    if (top) {
+      const b = _intensityBasisOrDefault(sets[1]?.intensityBasis)
+      html += `<div class="sf-sec" id="ts-block-top"><div class="sf-head"><b>Top set</b><span>the heaviest set</span></div>
+        ${fourFields(0, fld('Sets', '', fixedOne))}
+        <p class="wb-hint">You log the weight you work up to in the logger.</p></div>
+        <div class="sf-sec sf-line" id="ts-block-back"><div class="sf-head"><b>Back-offs</b></div>
+        ${fourFields(1, fld('Sets', '', stepper()))}
+        <p class="sf-lab">Back-off weight is a percentage of</p>${baseSeg(b)}<p class="wb-hint" id="ts-basis-help">${_intensityBasisHelp(b)}</p>
+        <div class="sf-grid">${pctField(1)}</div></div>`
+    } else {
+      html += `<div class="sf-sec" id="ts-block-all">${fourFields(0, fld('Sets', '', stepper()))}</div>`
+    }
+    html += `<button type="button" class="sf-row" id="ts-show-each" onclick="tsShowEachSet(true,'${cid}')">Customise each set (${sets.length}) <span aria-hidden="true">›</span></button>`
+  } else {
+    if (!uniform && !_sfWin._tsView?.custom) html += `<div class="wb-notice">These sets have different targets, so each one is shown.</div>`
+    const name = i => (top ? (i === 0 ? 'Top set' : `Back-off ${i}`) : `Set ${i + 1}`)
+    const sel = Math.max(0, Math.min(ui.sel, sets.length - 1))
+    // A per-set flag the tiles cannot edit (AMRAP / bodyweight on one set, a different base) is still SHOWN, never invisible (review C).
+    const tileTags = (s, i) => [s.amrap && i !== sets.length - 1 ? 'AMRAP' : '', s.bodyweight && !sets[_tsGroupStart(top)]?.bodyweight ? 'BW' : '', type === 'weight_reps' && (_hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)) ? esc(_intensityBasisShort(s.intensityBasis)) : ''].filter(Boolean).map(t => `<em class="sf-tag">${t}</em>`).join('')
+    const line = (lo, hi) => (_hasNumVal(lo) && _hasNumVal(hi) && String(lo) !== String(hi) ? `${lo}–${hi}` : (_hasNumVal(lo) ? String(lo) : (_hasNumVal(hi) ? String(hi) : '—')))
+    html += `<p class="sf-lab">Each set different: tap a set to change it</p><div class="sf-tiles" role="list">${sets.map((s, i) => `<button type="button" role="listitem" class="sf-tile" id="sf-tile-${i}" aria-pressed="${i === sel}" onclick="sfSelect(${i},'${cid}')"><b>${name(i)}</b><span>${esc(line(s.repsMin, s.repsMax))} reps</span><span>${(s.effortType === 'rir' ? 'RIR ' : 'RPE ') + esc(line(s.effortMin, s.effortMax))}</span>${tileTags(s, i)}<span>${esc(line(s.restMin, s.restMax))}</span></button>`).join('')}</div>`
+    const canDel = sets.length > 1 && !(top && sel === 0)
+    const nameCell = `<div class="sf-fld"><p class="sf-lab">Set</p><div class="sf-pills"></div><div class="sf-setname"><span>${name(sel)}</span>${canDel ? `<button type="button" class="sf-x" id="sf-del-${sel}" aria-label="Delete ${name(sel)}" onclick="sfDeleteSet(${sel},'${cid}')">&times;</button>` : ''}</div></div>`
+    html += `<div class="sf-sec">${fourFields(sel, nameCell)}`
+    const showPct = (top && sel > 0) || (!top && loadOn && loadMode === 'pct' && !(sel === 0 && s1))
+    if (showPct) html += `<div class="sf-grid">${pctField(sel)}</div>${type === 'weight_reps' ? `<p class="wb-hint" id="sf-sel-basis">Percentage of: ${esc(_intensityBasisLabel(_intensityBasisOrDefault(sets[sel]?.intensityBasis)))}</p>` : ''}`
+    const showKg = loadOn && !sets[sel]?.bodyweight && (top ? sel > 0 : loadMode === 'kg')
+    if (showKg) html += `<div class="sf-grid">${fld(`Weight (${_sfWin._unitPrefs.weight})`, '', `<input id="ts-weight-${sel}" class="field-input sf-box" type="text" inputmode="decimal" aria-label="Weight" placeholder="—"${sets[sel]?.weight ? ` ${weightInputAttrs(sets[sel].weight)}` : ''}>`)}</div>`
+    html += `</div><button type="button" class="sf-add" id="sf-add-set" onclick="sfAddSet('${cid}')">+ Add set (copies ${name(sets.length - 1).toLowerCase()})</button>
+      <button type="button" class="sf-row sf-back" id="ts-hide-each" onclick="tsMakeSetsSame('${cid}')"><span aria-hidden="true">‹</span> Back to the same for every set</button>
+      <p class="wb-hint">Going back makes every ${top ? 'back-off ' : ''}set match ${top ? 'back-off 1' : 'set 1'}; changes to single sets are dropped.</p>`
+  }
+
+  // ── More options
+  const g = _tsGroupStart(top)
+  const chip = (k, label, on) => `<button type="button" class="sf-chip" id="sf-chip-${k}" aria-pressed="${!!on}" onclick="sfChip('${k}','${cid}')">${label}</button>`
+  const tempoOn = !!(ui.chips.tempo || sets.some(s => s.tempo))
+  const cdOn = !!(ui.chips.countdown || sets.some(s => s.countdown))
+  const notesOn = !!(ui.chips.notes || _sfEl('att-notes')?.value.trim())
+  const bw = !!sets[g]?.bodyweight
+  const amrap = !!sets[sets.length - 1]?.amrap
+  const typeLabel = type === 'unilateral' ? 'Strength, per side' : 'Strength'
+  const chips = [
+    chip('type', `Type: ${typeLabel} <span aria-hidden="true">▾</span>`, ui.chips.type),
+    (!bw && !loadOn) ? chip('load', top ? '+ Back-off weight' : '+ Load', false) : '',
+    tempoOn ? '' : chip('tempo', '+ Tempo', false),
+    cdOn ? '' : chip('countdown', '+ Countdown', false),
+    notesOn ? '' : chip('notes', '+ Notes', false),
+    `<button type="button" class="sf-chip" id="ts-amrap-last" aria-pressed="${amrap}" onclick="tsToggleLastAmrap('${cid}')">${amrap ? '✓ ' : '+ '}Last set AMRAP</button>`,
+    `<button type="button" class="sf-chip" id="sf-chip-unilateral" aria-pressed="${type === 'unilateral'}" onclick="toggleUnilateralType('${cid}')">${type === 'unilateral' ? '✓ ' : '+ '}Unilateral</button>`,
+    top ? '' : `<button type="button" class="sf-chip" id="ts-bw-all" aria-pressed="${bw}" onclick="tsToggleAllBodyweight('${cid}')">${bw ? '✓ ' : '+ '}Bodyweight</button>`,
+  ].join('')
+  const xBtn = (k, label) => `<button type="button" class="sf-x" id="sf-x-${k}" aria-label="Remove ${label}" onclick="sfChipOff('${k}','${cid}')">&times;</button>`
+  let boxes = ''
+  if (loadOn && top) {
+    boxes += `<div class="sf-opt" id="sf-opt-load"><div class="sf-opt-head"><b>Back-off weight</b>${xBtn('load', 'back-off weight')}</div><p class="wb-hint">A fixed weight for the back-offs, instead of a percentage.</p>${custom ? '' : `<div class="sf-grid">${fld(`Weight (${_sfWin._unitPrefs.weight})`, '', `<input id="ts-weight-1" class="field-input sf-box" type="text" inputmode="decimal" aria-label="Back-off weight" placeholder="—"${sets[1]?.weight ? ` ${weightInputAttrs(sets[1].weight)}` : ''}>`)}</div>`}</div>`
+  }
+  if (loadOn && !top && !bw) {
+    const b = _intensityBasisOrDefault(sets[s1 ? 1 : 0]?.intensityBasis)
+    const pctIdx = s1 ? 1 : 0   // the group's % box: set 2's when set 1 sets the weight
+    if (!custom) drawn.push(pctIdx)
+    boxes += `<div class="sf-opt" id="sf-opt-load"><div class="sf-opt-head"><b>Load</b>${xBtn('load', 'load')}</div>
+      <div class="wb-seg" role="group" aria-label="Load as"><button type="button" id="sf-load-kg" aria-pressed="${loadMode === 'kg'}" onclick="sfLoadMode('kg','${cid}')">Weight (${_sfWin._unitPrefs.weight})</button><button type="button" id="sf-load-pct" aria-pressed="${loadMode === 'pct'}" onclick="sfLoadMode('pct','${cid}')">Percentage</button></div>
+      ${loadMode === 'kg'
+        ? (custom ? '<p class="wb-hint">Each set\'s weight is set on its own tile.</p>' : `<div class="sf-grid">${fld(`Weight (${_sfWin._unitPrefs.weight})`, '', `<input id="ts-weight-0" class="field-input sf-box" type="text" inputmode="decimal" aria-label="Weight" placeholder="—"${sets[0].weight ? ` ${weightInputAttrs(sets[0].weight)}` : ''}>`)}</div>`)
+        : `${baseSeg(b)}<p class="wb-hint" id="ts-basis-help">${_intensityBasisHelp(type === 'weight_reps' ? b : 'stored')}</p>${type === 'weight_reps' && _isTopSetBasis(b) ? `<p class="wb-hint" id="sf-set1-note">Set 1 sets the weight: work up to it with no %, and the percentage applies to sets 2 onwards.</p>` : ''}${custom ? '' : `<div class="sf-grid">${pctField(pctIdx)}</div>`}`}
+    </div>`
+  }
+  if (tempoOn) {
+    const tIn = (i, lab) => fld(lab, '', `<input id="ts-tempo-${i}" class="field-input sf-box" type="text" maxlength="4" aria-label="Tempo${top ? ` (${lab})` : ''}" placeholder="e.g. 3011"${v(sets[i]?.tempo)}>`)
+    boxes += `<div class="sf-opt" id="sf-opt-tempo"><div class="sf-opt-head"><b>Tempo</b>${xBtn('tempo', 'tempo')}</div><div class="sf-grid">${custom ? tIn(ui.sel, 'Tempo') : top ? tIn(0, 'Top set') + (sets[1] ? tIn(1, 'Back-offs') : '') : tIn(0, 'Tempo')}</div></div>`
+  }
+  if (cdOn) {
+    const cIn = (i, lab) => fld(lab, '', `<input id="ts-cd-${i}" class="field-input sf-box" type="number" inputmode="numeric" min="0" aria-label="Countdown in seconds${top ? ` (${lab})` : ''}" placeholder="—"${v(sets[i]?.countdown)}>`)
+    boxes += `<div class="sf-opt" id="sf-opt-countdown"><div class="sf-opt-head"><b>Countdown (s)</b>${xBtn('countdown', 'countdown')}</div><div class="sf-grid">${custom ? cIn(ui.sel, 'Seconds') : top ? cIn(0, 'Top set') + (sets[1] ? cIn(1, 'Back-offs') : '') : cIn(0, 'Seconds')}</div></div>`
+  }
+  html += `<div class="sf-sec"><p class="sf-lab">More options</p><div class="sf-chips">${chips}</div>${boxes}</div>`
+  if (_sfWin._sfCopiedFrom) html = `<p class="wb-hint sf-copied" id="sf-copied">Sets, reps, effort and rest copied from ${esc(_sfWin._sfCopiedFrom)}.</p>` + html
+
+  container.dataset.sf = '1'
+  container.dataset.sfType = type
+  container.dataset.tsTop = top ? '1' : '0'
+  container.dataset.sfIdx = drawn.join(',')
+  container.dataset.tsView = custom ? 'custom' : 'uniform'
+  container.innerHTML = html
+  _sfShellFields(type)
+}
+
 function renderTemplateSets(containerId, type) {
   const container = document.getElementById(containerId)
   if (!container) return
+  container.dataset.sf = '0'
+  // Weight & reps and Unilateral: the strength form (Step B, 2026-11-15). Every other type keeps the editor below, unchanged.
+  if (_sfIsStrength(type) && document.getElementById('att-type-field')) { _sfRender(container, containerId, type); return }
+  if (document.getElementById('att-type-field')) _sfShellFields(type)
   // Per-set cards unless the grouped view below says otherwise: flushTemplateSets copies a group's first set onto the rest ONLY while
   // the grouped view is on screen, so a stale 'uniform' left by a previous type (an interval block has no grouped view) must never survive.
   container.dataset.tsView = 'custom'
@@ -2750,7 +3178,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
   // layer, so opened from the runner this needs to sit above it (matches session-detail-panel, 1000).
   if (isRunner) overlay.style.zIndex = '1000'
   overlay.innerHTML = `
-    <div class="modal" style="max-width:480px;max-height:90vh;overflow-y:auto">
+    <div class="modal sf-sheet" style="max-height:90vh;overflow-y:auto" onkeydown="sfEnter(event)">
       <div class="modal-header">
         <h2 class="modal-title">${title}</h2>
         <button class="modal-close" onclick="closeModal('${modalId}')">✕</button>
@@ -2762,8 +3190,8 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
           <button type="button" class="btn-secondary" style="font-size:var(--text-md, 12px);padding:5px 12px;flex-shrink:0" onclick="_reopenExercisePickerFromDetail()">Change</button>
         </div>
       </div>
-      <div class="field">
-        <label class="field-label">Type</label>
+      <div class="field" id="att-type-field">
+        <label class="field-label" for="att-type">Type</label>
         <select class="field-input" id="att-type" onchange="flushTemplateSets('att-sets-container');renderTemplateSets('att-sets-container',this.value)">
           <option value="weight_reps"   ${existingType === 'weight_reps'   || (existingType !== 'unilateral' && existingType !== 'timed_hold' && existingType !== 'jump_height' && existingType !== 'jump_distance' && existingType !== 'interval' && existingType !== 'cardio') ? 'selected' : ''}>Weight &amp; reps</option>
           <option value="unilateral"    ${existingType === 'unilateral'    ? 'selected' : ''}>Unilateral (per side)</option>
@@ -2781,11 +3209,10 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
         <div id="att-metric-pills" style="display:flex;gap:6px;margin-top:8px"></div>
       </div>
 
-      <div style="margin:10px 0 6px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Set targets</div>
       <div id="att-sets-container"></div>
 
-      <div class="field" style="margin-top:10px">
-        <label class="field-label">Notes / coaching cues</label>
+      <div class="field" id="att-notes-field" style="margin-top:10px">
+        <label class="field-label sf-label-x" for="att-notes"><span>Notes / coaching cues</span><button type="button" class="sf-x" id="sf-x-notes" aria-label="Remove notes" onclick="sfChipOff('notes','att-sets-container')">&times;</button></label>
         <textarea class="field-input" id="att-notes" placeholder="e.g. Pause 1s at bottom, 3s eccentric" rows="2" style="resize:vertical">${escapeHtml(existingNotes || '')}</textarea>
       </div>
       <div class="field">
@@ -2795,17 +3222,25 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
       <p class="modal-error" id="att-error"></p>
       <div class="modal-footer">
         ${editingTexId ? `<button class="btn-danger" onclick="_stageRemoveExercise('${editingTexId}');closeModal('edit-tex-modal')">Remove</button><div style="flex:1"></div>` : ''}
-        <button class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
-        ${!editingTexId && !isRunner ? `<button class="btn-secondary" id="att-add-another" onclick="_stageAddExercise(true)">Add another</button>` : ''}
-        <button class="btn-primary" id="att-confirm-btn" data-busy-text="Saving…" onclick="${confirmAction}">${confirmLabel}</button>
+        <button type="button" class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
+        ${!editingTexId && !isRunner ? `<button type="button" class="btn-secondary" id="att-add-another" onclick="_stageAddExercise(true)">Add another</button>` : ''}
+        <button type="button" class="btn-primary" id="att-confirm-btn" data-busy-text="Saving…" onclick="${confirmAction}">${confirmLabel}</button>
       </div>
     </div>
   `
   mountModal(overlay)
   window._tsView = { custom: false }   // every editor opens on the grouped view; "Customise each set" switches it for this edit only
+  _sfWin._sfUi = { custom: false, sel: 0, range: {}, chips: {} }   // the strength form's UI-only state, fresh for every open
+  _sfWin._sfCopiedFrom = null
   // A new lift in the builder opens at 3 sets, the common case, so most exercises need no stepper taps. Intervals, jumps and a mid-session add keep their own single starting row.
   const startSets = !isRunner && !editingTexId && ['weight_reps', 'unilateral'].includes(existingType) ? 3 : 1
   window._templateSets = existingSets && existingSets.length ? existingSets.map(s => ({...s})) : Array.from({ length: startSets }, () => ({ effortType: 'rpe' }))
+  // A new lift in the builder starts from the PREVIOUS exercise's sets, reps, effort and rest (settled point 5), and says so in a grey line.
+  if (!isRunner && !editingTexId && !(existingSets && existingSets.length) && _sfIsStrength(existingType)) {
+    const rows = _sfWin._templateDraft?.exercises || []
+    const prev = [...rows].reverse().map(_sfStartFromPrevious).find(Boolean)
+    if (prev) { _sfWin._templateSets = prev.sets; _sfWin._sfCopiedFrom = prev.from }
+  }
   // Same normalization as the Type <select>'s own 'interval' option above (:1697) — a legacy
   // metric_type='cardio' row must render the interval block editor it's now labeled as, not the old
   // per-set cardio editor the dropdown no longer offers.

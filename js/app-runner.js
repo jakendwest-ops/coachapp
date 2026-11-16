@@ -1003,9 +1003,16 @@ function toggleTableSet(rowIdx) {
 
 // The top set is always row 0 (Jake, 2026-09-29) — an exercise has at most one. Recomputed on every
 // tick and every edit of that row, so correcting a typo corrects the backoff targets with it.
+// The set today's percentages are worked out FROM: a top set, or (Jake, 2026-11-15, "set 1 sets it") set 1 of straight sets whose later
+// sets use a "today's" base. The builder saves that set 1 with no percentage of its own.
+function _set1IsReference(ex) {
+  const list = ex?.sets_json || []
+  return !!list[0]?.isTopSet || list.slice(1).some(s => _isTopSetBasis(s?.intensityBasis))
+}
+
 function _recomputeLiveE1RM(ex) {
   const tgt0 = ex.sets_json?.[0]
-  if (!tgt0?.isTopSet) { ex._liveE1RM = null; ex._liveTopWeight = null; return }
+  if (!_set1IsReference(ex)) { ex._liveE1RM = null; ex._liveTopWeight = null; return }
   const row = ex.tableRows?.[0]
   // The weight actually LIFTED on the top set (kg): what a 'topSetWeight' back-off percentage is a percentage of. It needs only a ticked
   // row with a real weight: no reps and no effort, which the e1RM estimate below also needs (so this exists when that cannot).
@@ -1552,7 +1559,7 @@ function renderStrengthTable(ex) {
     // the BUILDER warns about at authoring time, app-workouts.js's topSetWarning) and — since 2026-10-01 — by deleting the
     // top-set row mid-session (deleteTableRow removes its prescription, so the backoffs are left with nothing to key on).
     const topRow0 = ex.tableRows?.[0]
-    const hasTopSet = !!ex.sets_json?.[0]?.isTopSet
+    const hasTopSet = _set1IsReference(ex)   // a top set, or set 1 of straight sets on a "today's" base
     const topLogged = !!(hasTopSet && topRow0?.done)
     // A percentage of the top set's WEIGHT needs no effort, so the effort message (case 2) never applies to it; its third case is a
     // ticked top set with no usable weight (a bodyweight row).

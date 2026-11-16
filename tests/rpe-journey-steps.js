@@ -51,7 +51,7 @@ async function buildTopSetTemplate(page, { tplName, exName, shotPrefix, viaCreat
   // "% of" dropdown + percentage are on screen (no "More options" fold to open).
   await expect(page.locator('#ts-rmin-1')).toBeVisible()
   await page.locator('#ts-rmin-1').fill('8')
-  await page.locator('#ts-basis-1').selectOption('topSet')
+  await page.locator('#sf-basis-topSet').click()   // the strength form (2026-11-15): four buttons, not a dropdown
   await page.locator('#ts-imin-1').fill('70')
   if (shotPrefix) await shot(page, `${shotPrefix}-builder`)
 
