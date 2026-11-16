@@ -2624,9 +2624,9 @@ function _sfRender(container, containerId, type) {
 
   // ── the body: same-for-every-set, or Customise each set
   const loadOn = top
-    ? !!(ui.chips.load || sets.slice(1).some(s => s.weight))
-    : !!(ui.chips.load || sets.some(s => s.weight || _hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)))
-  const loadMode = ui.loadMode || (sets.some(s => _hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)) ? 'pct' : sets.some(s => s.weight) ? 'kg' : 'kg')
+    ? !!(ui.chips.load || sets.slice(1).some(s => _hasNumVal(s.weight)))
+    : !!(ui.chips.load || sets.some(s => _hasNumVal(s.weight) || _hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)))
+  const loadMode = ui.loadMode || (sets.some(s => _hasNumVal(s.intensityMin) || _hasNumVal(s.intensityMax)) ? 'pct' : sets.some(s => _hasNumVal(s.weight)) ? 'kg' : 'kg')
   if (!custom) {
     if (top) {
       const b = _intensityBasisOrDefault(sets[1]?.intensityBasis)

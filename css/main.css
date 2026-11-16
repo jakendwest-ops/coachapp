@@ -1752,10 +1752,10 @@ a.cockpit-btn { padding: 0 14px; border: 1px solid var(--border); border-radius:
 .sf-tile b { color:var(--text); font-size:var(--text-base); }
 .sf-tile[aria-pressed="true"] { border-color:var(--accent); background:var(--accent-light); }
 .sf-setname { display:flex; align-items:center; justify-content:space-between; gap:6px; height:46px; padding:0 6px 0 12px; border:1.5px solid var(--accent); border-radius:var(--radius-sm); background:var(--accent-light); font-weight:700; font-size:var(--text-lg); }
-.sf-x { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:6px; background:var(--danger-light); color:var(--danger-text); font-size:var(--text-xl); font-weight:700; line-height:1; cursor:pointer; }
-.sf-add { justify-self:start; min-height:44px; padding:0 16px; border-radius:22px; background:var(--accent-light); color:var(--accent); font-weight:600; font-size:var(--text-base); cursor:pointer; margin-bottom:6px; }
+.sf-x { width:32px; height:32px; flex:none; display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:var(--radius-xs); background:var(--danger-light); color:var(--danger-text); font-size:var(--text-xl); font-weight:700; line-height:1; cursor:pointer; }
+.sf-add { justify-self:start; min-height:44px; padding:0 16px; border-radius:var(--radius-full); background:var(--accent-light); color:var(--accent); font-weight:600; font-size:var(--text-base); cursor:pointer; margin-bottom:6px; }
 .sf-chips { display:flex; flex-wrap:wrap; gap:8px; }
-.sf-chip { min-height:40px; padding:0 14px; border-radius:20px; border:0; background:var(--surface-2); color:var(--accent); font-size:var(--text-base); font-weight:500; cursor:pointer; }
+.sf-chip { min-height:40px; padding:0 14px; border-radius:var(--radius-full); border:0; background:var(--surface-2); color:var(--accent); font-size:var(--text-base); font-weight:500; cursor:pointer; }
 .sf-chip#sf-chip-type { color:var(--text-muted); }
 .sf-chip[aria-pressed="true"] { background:var(--accent-light); font-weight:700; }
 .sf-bases { display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--border); border-radius:var(--radius-sm); overflow:hidden; }
