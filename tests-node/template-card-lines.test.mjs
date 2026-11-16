@@ -80,14 +80,14 @@ describe('_tplCardHtml: the whole card is the Edit button', () => {
   })
 
   test('an exercise name is escaped everywhere it is printed (a client can create exercises in the coach\'s library)', () => {
-    const html = card(ex({ exercise_name: '<img src=x onerror=alert(1)>', superset_group: '<b>', notes: '[Tag<] <i>x</i>' }), 0, 1, 't', false)
+    const html = card(ex({ exercise_name: '<img src=x onerror=alert(1)>', superset_group: '<b>', notes: '[Tag<] <i>x</i>' }), 0, 1, 't', false, '<b>1')
     assert.doesNotMatch(html, /<img|<i>|<b>x/)
     assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/)
   })
 
   test('the chips: top set, cardio, superset, bodyweight', () => {
-    const html = card(ex({ superset_group: 'A', sets_json: [S({ isTopSet: true, bodyweight: true }), S()] }), 0, 1, 't', false)
-    assert.match(html, /tpl-chip">Top set</); assert.match(html, /tpl-chip-ss">SS: A</); assert.match(html, /tpl-chip-bw">BW</)
+    const html = card(ex({ superset_group: 'A', sets_json: [S({ isTopSet: true, bodyweight: true }), S()] }), 0, 1, 't', false, 'A1')
+    assert.match(html, /tpl-chip">Top set</); assert.match(html, /tpl-chip-ss">A1</); assert.match(html, /tpl-chip-bw">BW</)
     assert.match(card(ex({ metric_type: 'cardio', sets_json: [{ duration: '10:00' }] }), 0, 1, 't', false), /tpl-chip-cardio">Cardio</)
   })
 

@@ -36,7 +36,7 @@ test.describe('A3-cont — add-exercise still silently required a manual refresh
         picked: { id: null, name: tag }, existingType: 'weight_reps'
       })
       document.getElementById('att-notes').value = 'test note'
-      document.getElementById('att-superset').value = 'a'
+      // (the typed superset box went in Step C, 2026-11-16: superset_group is set by "Add + superset" now)
 
       let threw = null
       try {

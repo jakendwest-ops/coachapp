@@ -3033,7 +3033,8 @@ async function _confirmRunnerExerciseFromModal(mode) {
   const exerciseId = picked.id || null
   const metricType = document.getElementById('att-type').value || 'weight_reps'
   const notes = document.getElementById('att-notes').value.trim() || null
-  const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+  // The typed superset box is gone (Step C, 2026-11-16): a swap keeps the slot's superset, a mid-session add is never in one.
+  const supersetGroup = mode === 'swap' ? (_runner.exercises[_runner.exIdx]?.supersetGroup || null) : null
   const sets = window._templateSets || []
   // Shared with saveExerciseToTemplate — one allowlist, so these two cannot drift again (les-037).
   // `derived` reproduces exactly what this function used to inline: unilateral === metricType is

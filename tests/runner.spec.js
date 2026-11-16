@@ -600,13 +600,17 @@ test.describe('Workout runner (client)', () => {
     await expect(page.locator('#att-name-display')).toHaveText(name)
     // Same builder screen — has the full set-target UI, not a cut-down picker
     await expect(page.locator('#att-sets-container')).toBeVisible()
-    await expect(page.locator('#att-superset')).toBeVisible()
+    // The typed superset box is gone (Step C): a swap keeps the slot's superset, and the runner offers no "Add + superset".
+    await expect(page.locator('#att-superset')).toHaveCount(0)
+    await expect(page.locator('#att-add-superset')).toHaveCount(0)
+    await page.evaluate(() => { _runner.exercises[_runner.exIdx].supersetGroup = 'B' })   // the slot was in a superset
 
     await page.locator('#att-confirm-btn').click()
 
     await expect(page.locator('#add-to-template-modal')).not.toBeVisible({ timeout: 6000 })
     const currentName = await page.evaluate(() => _runner.exercises[_runner.exIdx].name)
     expect(currentName).toBe(name)
+    expect(await page.evaluate(() => _runner.exercises[_runner.exIdx].supersetGroup), 'a swap keeps the superset of the slot').toBe('B')
   })
 
   test('add exercise opens the picker first, then the sets/reps screen, and adding appends a new exercise and jumps to it', async ({ page }) => {

@@ -1700,7 +1700,13 @@ function _renderTemplateExerciseList() {
       <div class="empty-text">Add exercises to build this workout</div>
       <button class="btn-primary" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>
     </div>
-  ` : `<div class="list" id="tpl-ex-list">${exercises.map((ex, i) => _tplCardHtml(ex, i, exercises.length, id, reorder)).join('')}</div>
+  ` : `<div class="list" id="tpl-ex-list">${(() => {
+    const labels = _ssLabels(exercises)
+    return exercises.map((ex, i) => {
+      const [s, e] = _ssBlock(exercises, i)
+      return _tplCardHtml(ex, i, exercises.length, id, reorder, labels[i], { up: s > 0, down: e < exercises.length - 1 })
+    }).join('')
+  })()}</div>
     <button type="button" class="tpl-add" id="tpl-add-btn" onclick="showAddExerciseToTemplateModal('${id}')">+ Add exercise</button>`) + _tplUndoHtml()
 }
 
@@ -1737,14 +1743,85 @@ function _tplExerciseLines(ex) {
   return lines.length ? lines : [meta]
 }
 
-function _tplCardHtml(ex, i, n, id, reorder) {
+// ─── SUPERSETS IN THE BUILDER (Step C, docs/superpowers/plans/2026-11-15-workout-builder-speed.md) ───────────────────────────────
+// The data is unchanged: a row's superset_group letter, and every row with the same letter is one superset. What changed is that the
+// letter is chosen for the coach ("Add + superset"), never typed. A letter on ONE row only (a legacy typed letter, or a partner deleted)
+// is not a superset: it shows no tag and moves on its own. Pure helpers first (tests-node/superset-builder.test.mjs).
+const _ssKey = ex => (ex?.superset_group == null ? '' : String(ex.superset_group).trim().toUpperCase())
+// How many rows carry this letter.
+function _ssSize(rows, letter) { return letter ? rows.filter(r => _ssKey(r) === letter).length : 0 }
+// The tag each row shows: "A1", "A2"... by position among its letter's rows, or '' for no superset.
+function _ssLabels(rows) {
+  const seen = {}
+  return rows.map(r => {
+    const k = _ssKey(r)
+    if (!k || _ssSize(rows, k) < 2) return ''
+    seen[k] = (seen[k] || 0) + 1
+    return k + seen[k]
+  })
+}
+// The first letter A-Z no row uses yet (null if all 26 are taken).
+function _ssNextLetter(rows) {
+  const used = new Set(rows.map(_ssKey).filter(Boolean))
+  for (let c = 65; c <= 90; c++) { const l = String.fromCharCode(c); if (!used.has(l)) return l }
+  return null
+}
+// The run of rows [start, end] that moves as one: a superset's neighbouring members, or the row alone.
+function _ssBlock(rows, i) {
+  const k = _ssKey(rows[i])
+  if (!k || _ssSize(rows, k) < 2) return [i, i]
+  let s = i, e = i
+  while (s > 0 && _ssKey(rows[s - 1]) === k) s--
+  while (e < rows.length - 1 && _ssKey(rows[e + 1]) === k) e++
+  return [s, e]
+}
+// Reorder keeps a superset together: the row's block jumps the whole neighbouring block. Returns a new array, or null at either end.
+function _ssMoveBlock(rows, i, dir) {
+  const [s, e] = _ssBlock(rows, i)
+  if (dir < 0 ? s === 0 : e === rows.length - 1) return null
+  const [ns, ne] = _ssBlock(rows, dir < 0 ? s - 1 : e + 1)
+  const block = rows.slice(s, e + 1), other = rows.slice(ns, ne + 1)
+  const lo = Math.min(s, ns), hi = Math.max(e, ne)
+  return [...rows.slice(0, lo), ...(dir < 0 ? [...block, ...other] : [...other, ...block]), ...rows.slice(hi + 1)]
+}
+// Sets stay in step: every OTHER member gets n sets (extra ones copy that member's last set, never as a top set). Intervals and legacy
+// cardio have one block, not a list of sets, so they are left alone. Mutates the rows.
+function _ssSyncSetCount(rows, letter, n, exceptKey) {
+  if (!letter || !(n > 0)) return
+  rows.forEach(r => {
+    if (_ssKey(r) !== letter || r._draftKey === exceptKey || !_ssSetCount(r)) return
+    if (Array.isArray(r.sets_json) && r.sets_json.length) r.sets_json = _ssResize(r.sets_json, n)
+    r.sets = n
+  })
+}
+// A row's number of sets for keeping a superset in step, or null for a type that has no list of sets (intervals and legacy cardio are one
+// block: they neither set nor follow the count).
+function _ssSetCount(row) {
+  const mt = row?.metric_type || row?.exercise_type
+  if (!row || mt === 'interval' || mt === 'cardio') return null
+  return (Array.isArray(row.sets_json) && row.sets_json.length) || row.sets || 0
+}
+// n sets: fewer drop from the end, more copy the last set (never as a top set). Returns new objects; the input is left alone.
+function _ssResize(list, n) {
+  const src = Array.isArray(list) ? list : []
+  const next = src.slice(0, n).map(s => ({ ...s }))
+  while (next.length < n) next.push(src.length ? { ...src[src.length - 1], isTopSet: false } : { effortType: 'rpe' })
+  return next
+}
+// Whether "Add + superset" is offered: the superset this would make or grow stays at three or fewer.
+function _ssCanGrow(rows, letter, adding) {
+  const size = letter ? Math.max(_ssSize(rows, letter), 1) : 1
+  return size + (adding ? 1 : 0) < 3
+}
+
+function _tplCardHtml(ex, i, n, id, reorder, ssLabel = '', moves = null) {
   const _mt = ex.metric_type || ex.exercise_type
   const key = ex._draftKey
   const name = escapeHtml(ex.exercise_name)
   const chips = [
     ex.sets_json?.[0]?.isTopSet && _mt !== 'cardio' && _mt !== 'interval' ? '<span class="tpl-chip">Top set</span>' : '',
     _mt === 'cardio' ? '<span class="tpl-chip tpl-chip-cardio">Cardio</span>' : '',
-    ex.superset_group ? `<span class="tpl-chip tpl-chip-ss">SS: ${escapeHtml(ex.superset_group)}</span>` : '',
+    ssLabel ? `<span class="tpl-chip tpl-chip-ss">${escapeHtml(ssLabel)}</span>` : '',
     ex.sets_json?.[0]?.bodyweight ? '<span class="tpl-chip tpl-chip-bw">BW</span>' : ''
   ].join('')
   const lines = _tplExerciseLines(ex).map(l => `<span class="tpl-ex-line">${escapeHtml(l).replace(/^Top set/, '<b>Top set</b>')}</span>`).join('')
@@ -1755,10 +1832,10 @@ function _tplCardHtml(ex, i, n, id, reorder) {
     return `<span class="tpl-ex-note"><em>${escapeHtml(ex.notes)}</em></span>`
   })()
   const lead = reorder
-    ? `<span class="tpl-ex-moves"><button type="button" data-move="-1" aria-label="Move ${name} up" ${i === 0 ? 'disabled' : ''} onclick="_stageReorderExercise('${key}',-1)">▲</button><button type="button" data-move="1" aria-label="Move ${name} down" ${i === n - 1 ? 'disabled' : ''} onclick="_stageReorderExercise('${key}',1)">▼</button></span>`
+    ? `<span class="tpl-ex-moves"><button type="button" data-move="-1" aria-label="Move ${name} up" ${(moves ? !moves.up : i === 0) ? 'disabled' : ''} onclick="_stageReorderExercise('${key}',-1)">▲</button><button type="button" data-move="1" aria-label="Move ${name} down" ${(moves ? !moves.down : i === n - 1) ? 'disabled' : ''} onclick="_stageReorderExercise('${key}',1)">▼</button></span>`
     : `<span class="tpl-ex-badge" aria-hidden="true">${i + 1}</span>`
   const text = `<span class="tpl-ex-text"><span class="tpl-ex-name">${name}${chips}</span>${lines}${notes}</span>`
-  return `<div class="card" style="margin-bottom:0" data-draft-key="${key}" data-ex-name="${name}">` + (reorder
+  return `<div class="card${ssLabel ? ' tpl-ss' : ''}" style="margin-bottom:0" data-draft-key="${key}" data-ex-name="${name}"${ssLabel ? ` data-ss="${escapeHtml(ssLabel)}"` : ''}>` + (reorder
     ? `<div class="tpl-ex-main">${lead}${text}</div>`
     : `<button type="button" class="tpl-ex-main" aria-label="Edit ${name}" onclick="showEditTemplateExerciseModal('${key}','${id}')">${lead}${text}<span class="tpl-ex-chev" aria-hidden="true">›</span></button>`) + '</div>'
 }
@@ -1782,8 +1859,16 @@ function _undoRemoveExercise() {
   clearTimeout(window._tplUndoTimer)
   window._tplRemoved = null
   if (r && d) {
-    d.exercises.splice(Math.min(r.index, d.exercises.length), 0, r.row)
-    d.exercises.forEach((e, idx) => { e.order_index = idx })
+    const rows = d.exercises
+    const partner = r.partnerKey ? rows.find(e => e._draftKey === r.partnerKey) : null
+    if (partner && !_ssKey(partner)) partner.superset_group = r.partnerGroup
+    let at = Math.min(r.index, rows.length)
+    // Never back into the middle of a superset it is not part of (the list may have been reordered since): after that superset instead.
+    if (at > 0 && at < rows.length && _ssKey(rows[at]) && _ssKey(rows[at - 1]) === _ssKey(rows[at]) && _ssKey(rows[at]) !== _ssKey(r.row)) at = _ssBlock(rows, at)[1] + 1
+    // And never as a fourth: a superset grown to three while it was gone keeps its three, and this comes back as a single exercise.
+    if (_ssKey(r.row) && _ssSize(rows, _ssKey(r.row)) >= 3) r.row.superset_group = null
+    rows.splice(at, 0, r.row)
+    rows.forEach((e, idx) => { e.order_index = idx })
   }
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
@@ -1871,9 +1956,10 @@ function _stageReorderExercise(draftKey, dir) {
   const d = window._templateDraft
   const i = d.exercises.findIndex(e => e._draftKey === draftKey)
   if (i === -1) return
-  const j = i + dir
-  if (j < 0 || j >= d.exercises.length) return
-  ;[d.exercises[i], d.exercises[j]] = [d.exercises[j], d.exercises[i]]
+  // A superset moves as one block, and a single exercise jumps a whole superset, so a group never gets split (Step C).
+  const moved = _ssMoveBlock(d.exercises, i, dir)
+  if (!moved) return
+  d.exercises = moved
   d.exercises.forEach((e, idx) => { e.order_index = idx })
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
@@ -2530,7 +2616,7 @@ function _sfShellFields(type) {
 // Desktop: Enter in a box adds the exercise; in the builder it adds and reopens the picker ("Add another"), as the plan says.
 function sfEnter(e) {
   if (e.key !== 'Enter' || e.isComposing || e.repeat || e.target?.tagName !== 'INPUT') return
-  if (_sfEl('att-sets-container')?.dataset.sf !== '1' || e.target.id === 'att-superset') return
+  if (_sfEl('att-sets-container')?.dataset.sf !== '1') return
   const another = _sfEl('att-add-another')
   const btn = another || _sfEl('att-confirm-btn')
   if (!btn) return
@@ -3107,7 +3193,7 @@ function _addSetBtn (containerId, tid, mode, label) {
 // Swap-then-Add (or same-button double-tap) in that gap used to spawn two overlays
 // sharing the hardcoded id 'add-to-template-modal', and getElementById/closeModal only
 // ever operate on the first one, permanently freezing the second (visible) modal.
-async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
+async function showAddExerciseToTemplateModal(templateId, runnerCtx = null, ssJoin = null) {
   // Synchronous DOM-existence check STAYS: it is a DIFFERENT guard from re-entry (it also stops a
   // second modal opening over a different one) and it is correct because no await precedes it.
   if (document.getElementById('add-to-template-modal') || document.getElementById('exercise-picker-modal')) return
@@ -3152,14 +3238,21 @@ async function showAddExerciseToTemplateModal(templateId, runnerCtx = null) {
 
   _openExercisePicker(ctxPromise.then(c => c.coachId), async picked => {
     const { targetId, coachId } = await ctxPromise
-    _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, existingType: picked.metric_type || 'weight_reps' })
+    _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, existingType: picked.metric_type || 'weight_reps', ssJoin: isRunner ? null : ssJoin })
   })
 }
 
 // Step 2 of add/swap/edit — sets/reps/notes screen, shown once an exercise has been picked.
 // Shared by the workout builder (add + edit) and the runner swap/add modal.
-function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingTexId = null, existingSets = null, existingType = 'weight_reps', existingNotes = '', existingSuperset = '' }) {
+function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingTexId = null, existingSets = null, existingType = 'weight_reps', existingNotes = '', ssJoin = null }) {
   const isRunner = !!runnerCtx
+  // Supersets (Step C): the builder only. ssJoin = { letter, partnerKey } when this exercise is being added as the next one of a superset.
+  const draftRows = (!isRunner && _sfWin._templateDraft?.exercises) || []
+  if (ssJoin && !draftRows.some(e => e._draftKey === ssJoin.partnerKey)) ssJoin = null   // the partner is gone: a plain add, and the sheet says nothing about a superset
+  const editRow = editingTexId ? draftRows.find(e => e._draftKey === editingTexId) : null
+  const ssLetter = ssJoin ? ssJoin.letter : _ssKey(editRow)
+  const ssMember = !!ssJoin || (!!ssLetter && _ssSize(draftRows, ssLetter) >= 2)
+  const ssGrow = !isRunner && (ssJoin ? _ssCanGrow(draftRows, ssLetter, true) : _ssCanGrow(draftRows, ssMember ? ssLetter : '', false))
   const title = editingTexId ? `Edit: ${escapeHtml(picked.name)}` : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap exercise' : 'Add exercise') : 'Add exercise')
   const confirmLabel = editingTexId ? 'Save' : (isRunner ? (runnerCtx.mode === 'swap' ? 'Swap' : 'Add') : 'Add exercise')
   const modalId = editingTexId ? 'edit-tex-modal' : 'add-to-template-modal'
@@ -3168,7 +3261,7 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
     : (isRunner ? `_confirmRunnerExerciseFromModal('${runnerCtx.mode}')` : `_stageAddExercise()`)
 
   window._exerciseDetailPicked = picked
-  window._exerciseDetailReopenCtx = { targetId, runnerCtx, editingTexId, coachId }
+  window._exerciseDetailReopenCtx = { targetId, runnerCtx, editingTexId, coachId, ssJoin }
 
   document.getElementById(modalId)?.remove()
   const overlay = document.createElement('div')
@@ -3215,14 +3308,14 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
         <label class="field-label sf-label-x" for="att-notes"><span>Notes / coaching cues</span><button type="button" class="sf-x" id="sf-x-notes" aria-label="Remove notes" onclick="sfChipOff('notes','att-sets-container')">&times;</button></label>
         <textarea class="field-input" id="att-notes" placeholder="e.g. Pause 1s at bottom, 3s eccentric" rows="2" style="resize:vertical">${escapeHtml(existingNotes || '')}</textarea>
       </div>
-      <div class="field">
-        <label class="field-label">Superset group <span style="font-weight:400;color:var(--text-muted)">(same letter links exercises)</span></label>
-        <input class="field-input" id="att-superset" placeholder="e.g. A" maxlength="3" style="width:80px" value="${escapeHtml(existingSuperset || '')}">
-      </div>
+      ${!isRunner && ssMember ? `<p class="wb-hint" id="sf-ss-note">Superset ${escapeHtml(ssLetter)}: changing Sets changes every exercise in it. Each keeps its own rest.</p>` : ''}
+      ${editingTexId && !isRunner && ssMember ? `<button type="button" class="sf-row sf-back" id="att-ss-remove" onclick="_stageEditExercise('${editingTexId}',false,true)">Remove from superset ${escapeHtml(ssLetter)}</button>` : ''}
       <p class="modal-error" id="att-error"></p>
       <div class="modal-footer">
         ${editingTexId ? `<button class="btn-danger" onclick="_stageRemoveExercise('${editingTexId}');closeModal('edit-tex-modal')">Remove</button><div style="flex:1"></div>` : ''}
         <button type="button" class="btn-secondary" onclick="closeModal('${modalId}')">Cancel</button>
+        ${ssGrow && editingTexId ? `<button type="button" class="btn-secondary" id="att-add-superset" onclick="_stageEditExercise('${editingTexId}',true)">Save + superset</button>` : ''}
+        ${ssGrow && !editingTexId ? `<button type="button" class="btn-secondary" id="att-add-superset" onclick="_stageAddExercise(false,true)">Add + superset</button>` : ''}
         ${!editingTexId && !isRunner ? `<button type="button" class="btn-secondary" id="att-add-another" onclick="_stageAddExercise(true)">Add another</button>` : ''}
         <button type="button" class="btn-primary" id="att-confirm-btn" data-busy-text="Saving…" onclick="${confirmAction}">${confirmLabel}</button>
       </div>
@@ -3238,8 +3331,16 @@ function _showExerciseSetsModal({ targetId, runnerCtx, coachId, picked, editingT
   // A new lift in the builder starts from the PREVIOUS exercise's sets, reps, effort and rest (settled point 5), and says so in a grey line.
   if (!isRunner && !editingTexId && !(existingSets && existingSets.length) && _sfIsStrength(existingType)) {
     const rows = _sfWin._templateDraft?.exercises || []
-    const prev = [...rows].reverse().map(_sfStartFromPrevious).find(Boolean)
+    // The next exercise of a superset starts from the one it joins (its Sets above all: they stay in step), wherever that sits in the list.
+    const partner = ssJoin ? rows.find(e => e._draftKey === ssJoin.partnerKey) : null
+    const prev = (partner && _sfStartFromPrevious(partner)) || [...rows].reverse().map(_sfStartFromPrevious).find(Boolean)
     if (prev) { _sfWin._templateSets = prev.sets; _sfWin._sfCopiedFrom = prev.from }
+  }
+  // The next member of a superset opens with EXACTLY the set count of the one it joins, top set included and whatever its type, so
+  // adding it never trims the others (review, 2026-11-16: a top set + 3 back-offs used to give A2 three sets, and saving cut A1 to three).
+  if (ssJoin && !editingTexId && !(existingSets && existingSets.length)) {
+    const n = _ssSetCount(draftRows.find(e => e._draftKey === ssJoin.partnerKey))
+    if (n && existingType !== 'interval' && existingType !== 'cardio') _sfWin._templateSets = _ssResize(_sfWin._templateSets, n)
   }
   // Same normalization as the Type <select>'s own 'interval' option above (:1697) — a legacy
   // metric_type='cardio' row must render the interval block editor it's now labeled as, not the old
@@ -3256,14 +3357,13 @@ function _reopenExercisePickerFromDetail() {
   flushTemplateSets('att-sets-container')
   const currentType = document.getElementById('att-type')?.value || 'weight_reps'
   const currentNotes = document.getElementById('att-notes')?.value || ''
-  const currentSuperset = document.getElementById('att-superset')?.value || ''
   const currentSets = window._templateSets
   document.getElementById(modalId)?.remove()
   _openExercisePicker(ctx.coachId, picked => {
     _showExerciseSetsModal({
       targetId: ctx.targetId, runnerCtx: ctx.runnerCtx, coachId: ctx.coachId, picked,
       editingTexId: ctx.editingTexId, existingSets: currentSets, existingType: currentType,
-      existingNotes: currentNotes, existingSuperset: currentSuperset
+      existingNotes: currentNotes, ssJoin: ctx.ssJoin || null
     })
   })
 }
@@ -3791,7 +3891,7 @@ function _diffTemplateDraft(draft) {
 
 // Stages a new exercise into window._templateDraft — no database write. The real insert happens once,
 // for every queued change at once, when "Save workout" (Task 6) replays the draft against baseline.
-function _stageAddExercise(addAnother = false) {
+function _stageAddExercise(addAnother = false, superset = false) {
   const picked = window._exerciseDetailPicked
   const errorEl = document.getElementById('att-error')
   if (!picked?.name) { errorEl.textContent = 'Exercise name is required'; return }
@@ -3799,27 +3899,75 @@ function _stageAddExercise(addAnother = false) {
   const metricType = document.getElementById('att-type').value || 'weight_reps'
   const derived = _deriveFromMetricType(metricType)
   const notes = document.getElementById('att-notes').value.trim() || null
-  const supersetGroup = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
   const cleanSets = _cleanTemplateSets(window._templateSets || [], derived, metricType)
-  window._templateDraft.exercises.push({
+  const ctx = /** @type {any} */ (window)._exerciseDetailReopenCtx || {}
+  const rows = window._templateDraft.exercises
+  const row = {
     _draftKey: _newDraftKey(),
     id: null,
     exercise_id: picked.id || null,
     exercise_name: picked.name,
     exercise_type: derived.exercise_type,
     metric_type: metricType,
-    order_index: window._templateDraft.exercises.length,
+    order_index: rows.length,
     sets: cleanSets.length || null,
     sets_json: cleanSets.length ? cleanSets : null,
     notes,
-    superset_group: supersetGroup,
-  })
+    superset_group: null,
+  }
+  // The next exercise of a superset (Step C): it goes in right after the superset, both carry the letter, and the others' Sets follow this one's.
+  const join = ctx.ssJoin
+  const p = join ? rows.findIndex(e => e._draftKey === join.partnerKey) : -1
+  if (p !== -1) {
+    // One spelling for the whole superset: a legacy ' a' partner is written back as 'A', the same as the new member (review, 2026-11-16).
+    const letter = _ssKey(rows[p]) || join.letter
+    rows.filter(r => _ssKey(r) === letter).forEach(r => { r.superset_group = letter })
+    rows[p].superset_group = letter
+    row.superset_group = letter
+    const before = _ssSetCount(rows[p])
+    rows.splice(_ssBlock(rows, p)[1] + 1, 0, row)
+    rows.forEach((e, idx) => { e.order_index = idx })
+    // The others follow only when the coach CHANGED Sets on this one; an interval (one block) never sets the count.
+    const n = _ssSetCount(row)
+    if (n && before && n !== before) _ssSyncSetCount(rows, letter, n, row._draftKey)
+  } else {
+    rows.push(row)
+  }
   _rememberExerciseMetricType(picked.id || null, metricType)
-  const again = addAnother === true ? /** @type {any} */ (window)._exerciseDetailReopenCtx?.targetId : null
+  const again = (addAnother === true || superset === true) ? ctx.targetId : null
   closeModal('add-to-template-modal')
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
-  if (again) showAddExerciseToTemplateModal(again)   // straight back to the exercise search for the next one
+  if (again && superset === true) _ssOpenNext(again, row._draftKey)
+  else if (again) showAddExerciseToTemplateModal(again)   // straight back to the exercise search for the next one
+}
+
+// "Add + superset" / "Save + superset": the picker again, and whatever is picked joins this exercise's superset. The letter is the
+// exercise's own if it already has one, otherwise the first free one; it is only WRITTEN when the partner is actually added, so
+// cancelling leaves no superset of one behind.
+function _ssOpenNext(templateId, partnerKey) {
+  const rows = window._templateDraft?.exercises || []
+  const partner = rows.find(e => e._draftKey === partnerKey)
+  const letter = _ssKey(partner) || _ssNextLetter(rows)
+  if (!partner || !letter) { showAddExerciseToTemplateModal(templateId); return }
+  showAddExerciseToTemplateModal(templateId, null, { letter, partnerKey })
+}
+
+// Remove from superset (Step C): the exercise leaves and goes just below what is left of the superset; a pair leaves no superset at all,
+// one of three leaves the other two renumbered. Mutates the draft rows.
+function _ssLeave(rows, key) {
+  const i = rows.findIndex(e => e._draftKey === key)
+  if (i === -1) return rows
+  const k = _ssKey(rows[i])
+  if (!k) return rows
+  const [, e] = _ssBlock(rows, i)
+  const row = rows[i]
+  row.superset_group = null
+  const rest = rows.filter(r => r !== row)
+  rest.splice(e, 0, row)   // e was the block's last index with the row still in it, so this lands right after the remaining members
+  if (_ssSize(rest, k) === 1) rest.forEach(r => { if (_ssKey(r) === k) r.superset_group = null })
+  rest.forEach((r, idx) => { r.order_index = idx })
+  return rest
 }
 
 async function showEditTemplateExerciseModal(draftKey, templateId) {
@@ -3832,14 +3980,13 @@ async function showEditTemplateExerciseModal(draftKey, templateId) {
     editingTexId: draftKey,
     existingSets: row.sets_json?.length ? row.sets_json : (row.sets ? Array.from({ length: row.sets }, () => ({})) : [{}]),
     existingType: _resolveMetricType(row.metric_type, row.exercise_type, row.sets_json?.[0]),
-    existingNotes: row.notes || '',
-    existingSuperset: row.superset_group || ''
+    existingNotes: row.notes || ''
   })
 }
 
 // Stages an edit to the matching draft row by _draftKey — no database write, and the row's real `id`
 // (or null, for a row staged by _stageAddExercise in this same session) is left untouched.
-function _stageEditExercise(draftKey) {
+function _stageEditExercise(draftKey, superset = false, leave = false) {
   const errorEl = document.getElementById('att-error')
   const picked = window._exerciseDetailPicked
   if (!picked?.name) { errorEl.textContent = 'Name is required'; return }
@@ -3851,6 +3998,7 @@ function _stageEditExercise(draftKey) {
   const cleanSets = _cleanTemplateSets(sets, derived, metricType)
   const row = window._templateDraft.exercises.find(e => e._draftKey === draftKey)
   if (!row) { errorEl.textContent = 'This exercise is no longer in the workout.'; return }
+  const setsBefore = _ssSetCount(row)
   row.exercise_id = picked.id || null
   row.exercise_name = picked.name
   row.exercise_type = derived.exercise_type
@@ -3858,11 +4006,20 @@ function _stageEditExercise(draftKey) {
   row.sets = cleanSets.length || null
   row.sets_json = cleanSets.length ? cleanSets : null
   row.notes = document.getElementById('att-notes').value.trim() || null
-  row.superset_group = document.getElementById('att-superset')?.value.trim().toUpperCase() || null
+  // superset_group is no longer typed here (Step C): it is set by "Add + superset" and cleared by "Remove from superset".
+  const d = window._templateDraft
+  if (leave === true) d.exercises = _ssLeave(d.exercises, draftKey)
+  else if (_ssSize(d.exercises, _ssKey(row)) >= 2) {
+    // Only a CHANGED set count is passed on, and only from a type that has one (an interval is one block) - review, 2026-11-16.
+    const n = _ssSetCount(row)
+    if (n && n !== setsBefore) _ssSyncSetCount(d.exercises, _ssKey(row), n, draftKey)
+  }
   _rememberExerciseMetricType(row.exercise_id, metricType)
+  const templateId = /** @type {any} */ (window)._exerciseDetailReopenCtx?.targetId
   closeModal('edit-tex-modal')
   _renderTemplateExerciseList()
   _renderSaveWorkoutButton()
+  if (superset === true && templateId) _ssOpenNext(templateId, draftKey)
 }
 
 // Replaces the row-level confirmRemoveTemplateExercise + deleteTemplateExercise pair with a single
@@ -3875,7 +4032,11 @@ function _stageRemoveExercise(draftKey) {
   const at = d.exercises.findIndex(e => e._draftKey === draftKey)
   if (at !== -1) {
     clearTimeout(window._tplUndoTimer)
-    window._tplRemoved = { row: d.exercises[at], index: at, name: d.exercises[at].exercise_name }
+    // One of a pair: the other is no longer in a superset, so it loses the letter too (no hidden superset of one); Undo puts it back.
+    const k = _ssKey(d.exercises[at])
+    const partner = k && _ssSize(d.exercises, k) === 2 ? d.exercises.find((e, x) => x !== at && _ssKey(e) === k) : null
+    window._tplRemoved = { row: d.exercises[at], index: at, name: d.exercises[at].exercise_name, partnerKey: partner?._draftKey || null, partnerGroup: partner?.superset_group || null }
+    if (partner) partner.superset_group = null
     window._tplUndoTimer = setTimeout(_dismissRemovedExercise, 8000)
   }
   d.exercises = d.exercises.filter(e => e._draftKey !== draftKey)
