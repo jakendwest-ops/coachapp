@@ -514,7 +514,9 @@ const _dashPlural = (n, one, many) => `${n} ${n === 1 ? one : many}`
 // an inline handler whose NAME is in the source, so a computed one would silently stop working the day its target was renamed.
 const _dashBack = () => '<button type="button" class="dash-btn dash-btn-ghost" onclick="_dashPickDay(null)">Back to today</button>'
 const _dashToProgram = (cls, label) => `<button type="button" class="dash-btn ${cls} dash-nav" onclick="navigate('workouts')">${label}</button>`
-const _dashStart = (cid, tid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}','${tid}')">▶ Start workout</button>`
+const _dashStart = (cid, tid, label = '▶ Start workout') => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}','${tid}')">${label}</button>`
+// Personal view's rest-day action (Jake, 2026-11-16: "Add a workout" replaces "Train anyway" - clearer): pick one of your workouts and it is put on that day.
+const _dashAddWorkout = ds => `<button type="button" class="dash-btn dash-btn-primary" data-dash-add-workout onclick="_openAddWorkoutSheet('${ds}')">+ Add a workout</button>`
 // "Train anyway" in Personal view (Jake, 2026-10-31: rest day = the next session + Train anyway); a coached client keeps "Log a workout".
 const _dashLogWorkout = (cid, label = 'Log a workout') => `<button type="button" class="dash-btn dash-btn-primary" onclick="startWorkoutRunner('${cid}')">${label}</button>`
 const _dashViewSession = (id, cid) => `<button type="button" class="dash-btn dash-btn-primary" onclick="openWorkoutLog('${id}','${cid}')">View session</button>`
@@ -547,15 +549,20 @@ function _dashHeroHtml(day, ctx) {
     actions = _dashViewSession(escapeAttr(first.id), cid) + back
   } else if (day.kind === 'plan') {
     calm = false
-    eyebrow = (ctx.role === 'client' ? 'Up next' : 'Today') + (ctx.program ? ' · ' + escapeHtml(ctx.program.name) : '')
+    // A day holding only workouts the person added (2026-11-16) says so instead of naming a plan it is not part of.
+    const onlyAdded = day.planned.every(p => p._scheduled)
+    eyebrow = (ctx.role === 'client' ? 'Up next' : 'Today') + (onlyAdded ? ' · Added by you' : ctx.program ? ' · ' + escapeHtml(ctx.program.name) : '')
     title = escapeHtml(_dashPlanNames(day))
     const before = ctx.days.filter(d => d.ds < day.ds).reduce((n, d) => n + d.planned.length, 0)
     const total = ctx.days.reduce((n, d) => n + d.planned.length, 0)
     meta = day.planned.length > 1 ? `${day.planned.length} sessions today` : `Session ${before + 1} of ${total} this week`
     // Start needs the CLIENT'S CLONE template id (client_program_workouts.workout_template_id), never the master phase-slot id -
     // every other caller resolves it the same way. Without one, Workouts is where this session can be started.
-    const tid = day.planned[0]._clientTemplateId
-    actions = (tid ? _dashStart(cid, escapeAttr(tid)) : _dashToProgram('dash-btn-primary', 'Open Workouts')) + _dashToProgram('dash-btn-ghost', 'View plan')
+    // Two or more sessions (a plan session and an added workout, say): one Start each, named, so the second is not only reachable from the calendar.
+    const starts = day.planned.length > 1
+      ? day.planned.filter(p => p._clientTemplateId).map(p => _dashStart(cid, escapeAttr(p._clientTemplateId), '▶ ' + escapeHtml(_dashSessionName(p)))).join('')
+      : (day.planned[0]._clientTemplateId ? _dashStart(cid, escapeAttr(day.planned[0]._clientTemplateId)) : '')
+    actions = (starts || _dashToProgram('dash-btn-primary', 'Open Workouts')) + (ctx.hasProgram ? _dashToProgram('dash-btn-ghost', 'View plan') : '')
   } else if (day.kind === 'miss') {
     eyebrow = `${when} · Missed`
     title = escapeHtml(_dashPlanNames(day))
@@ -565,13 +572,15 @@ function _dashHeroHtml(day, ctx) {
     eyebrow = when
     title = escapeHtml(_dashPlanNames(day))
     meta = _dashDaysUntil(day.ds, ctx.todayStr)
-    actions = _dashToProgram('dash-btn-primary', 'View plan') + back
+    // A day of added workouts only has no plan to show (review, 2026-11-16); the calendar is where it is changed.
+    const onlyAdded = day.planned.every(p => p._scheduled)
+    actions = (ctx.hasProgram && !onlyAdded ? _dashToProgram('dash-btn-primary', 'View plan') : '<button type="button" class="dash-btn dash-btn-primary" onclick="navigate(\'calendar\')">Open calendar</button>') + back
   } else {   // rest: nothing planned, nothing logged. The wording differs so the same phrase is never said twice.
     eyebrow = day.today ? 'Today' : when
     if (day.today) {
       title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
-      meta = ctx.next ? `Next up: ${escapeHtml(ctx.next.title)}, ${_dashFormatDate(ctx.next.date)}` : 'Start a freeform session whenever you like.'
-      actions = _dashLogWorkout(cid, ctx.role === 'client' ? 'Log a workout' : 'Train anyway') + (ctx.next ? _dashToProgram('dash-btn-ghost', 'View plan') : '')
+      meta = ctx.next ? `Next up: ${escapeHtml(ctx.next.title)}, ${_dashFormatDate(ctx.next.date)}` : ctx.role === 'client' ? 'Start a freeform session whenever you like.' : 'Add one of your workouts to train today.'
+      actions = (ctx.role === 'client' ? _dashLogWorkout(cid, 'Log a workout') : _dashAddWorkout(day.ds)) + (ctx.next && ctx.hasProgram ? _dashToProgram('dash-btn-ghost', 'View plan') : '')
     } else if (day.ds < ctx.todayStr) {
       // A day before the current plan began: the page does not read earlier plans, so it cannot say nothing was planned (review, 2026-11-08, once ‹ reached back a year).
       const planned = ctx.hasProgram && !(ctx.planStart && day.ds < String(ctx.planStart).slice(0, 10))
@@ -581,7 +590,7 @@ function _dashHeroHtml(day, ctx) {
     } else {
       title = ctx.hasProgram ? 'Rest day' : 'Nothing planned'
       meta = ctx.hasProgram ? 'Recovery is part of the plan.' : 'Nothing planned yet.'
-      actions = back
+      actions = (ctx.role === 'client' ? '' : _dashAddWorkout(day.ds)) + back
     }
   }
   return `<section class="dash-hero${calm ? ' dash-hero-calm' : ''}" id="dash-hero" data-kind="${day.kind}">` +
@@ -1110,9 +1119,10 @@ function _dashLongDate() {
 // failed read shows as a notice and never passes for "nothing logged".
 async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
   const lookbackStart = _dashAddDays(_dashMonday(todayStr), -7 * _DASH_STREAK_WEEKS)
-  const [goalsR, eventsR, weightsR, programsR, logsR, checkInR] = await Promise.all([
+  const [goalsR, eventsR, weightsR, programsR, logsR, checkInR, schedR] = await Promise.all([
     db.from('goals').select('id, title, target_date, status, start_value, current_value, target_value, created_at, metric_label, metric_unit, linked_metric, linked_exercise_id, goal_milestones(id, title, completed_at, order)').eq('client_id', clientId).eq('status', 'active').order('target_date'),
-    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).gte('date', todayStr).order('date').limit(4),
+    // Ordinary events only: a scheduled workout (template_id set) is read below and shown as a session, so listing it here too would show it twice.
+    db.from('events').select('id, title, date, type, notes').eq('client_id', clientId).is('template_id', null).gte('date', todayStr).order('date').limit(4),
     // 14, not 5: the card draws a trend and weigh-ins are not daily, so 5 rows can span a fortnight and leave the window empty.
     db.from('weight_logs').select('date, weight_kg').eq('client_id', clientId).order('date', { ascending: false }).limit(14),
     // `id` and `week_number` are load-bearing. Without week_number every week of a periodised phase collapses onto week 1's
@@ -1124,6 +1134,8 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     _fetchAllRows(() => db.from('workout_logs').select('id, name, date, workout_log_exercises(id)', { count: 'exact' }).eq('client_id', clientId).gte('date', lookbackStart).order('date', { ascending: false }).order('id', { ascending: false })),
     // Two: the last check-in and the one before it, for the "vs last week" arrows (2026-10-29).
     checkIn ? db.from('client_check_ins').select('*').eq('client_id', clientId).order('created_at', { ascending: false }).limit(2) : Promise.resolve({ data: [], error: null }),
+    // Workouts the person put on a day (2026-11-16), from the same lookback as the sessions so a skipped one still shows as missed.
+    _readScheduled(clientId, lookbackStart, null),
   ])
 
   // Second round-trip, only when a programme exists. Deliberately NOT a nested embed on the query above: PostgREST silently NULLs a
@@ -1138,9 +1150,11 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     ;(r.data || []).forEach(row => { cpwMap[row.program_phase_workout_id] = { templateId: row.workout_template_id } })
   }
   // fromStart: each plan's days before its own start date are not planned sessions (_dashPlannedFrom's rule, per plan).
-  const progByDate = _programWorkoutsByDateAll(drawn, cpwMap, { fromStart: true })
+  // Scheduled workouts are planned sessions too: Today, the week strip, "x of y done" and missed all read this one map.
+  const progByDate = _mergePlanned(_programWorkoutsByDateAll(drawn, cpwMap, { fromStart: true }), _scheduledByDate(schedR.data))
   // The CURRENT plan's dates alone, for the adherence tile: _dashPlanAdherence runs a plan to the last week that has a session, so the next
   // block's weeks would read as this plan's ("Week 2 of 4" for a two-week plan; a finished plan at 0%) - review, 2026-10-29.
+  // Scheduled workouts stay out of it: that tile is about the plan ("Week N of M").
   const currentByDate = _programWorkoutsByDateAll([cp0].filter(Boolean), cpwMap, { fromStart: true })
   // The runner/save path can leave a 0-exercise workout_log (an abandoned start): those are not sessions (D3, 2026-09-07).
   const logs = (logsR.data || []).filter(l => (l.workout_log_exercises?.length || 0) > 0)
@@ -1153,7 +1167,7 @@ async function _dashLoadOwn(clientId, todayStr, { checkIn = false } = {}) {
     prevCheckIn: checkInR.data?.[1] || null,
     failed: {
       'your goals': goalsR.error, 'upcoming events': eventsR.error, 'weight history': weightsR.error,
-      'your plan': programsR.error || cpwErr, 'recent sessions': logsR.error, 'check-ins': checkInR.error,
+      'your plan': programsR.error || cpwErr, 'recent sessions': logsR.error, 'check-ins': checkInR.error, 'your scheduled workouts': schedR.error,
     },
   }
 }

@@ -31,6 +31,7 @@ erDiagram
 
     WORKOUT_TEMPLATES ||--o{ WORKOUT_TEMPLATE_EXERCISES : contains
     WORKOUT_TEMPLATES ||--o{ WORKOUT_LOGS : "logged from"
+    WORKOUT_TEMPLATES ||--o{ EVENTS : "scheduled on a day"
 
     WORKOUT_LOGS ||--o{ WORKOUT_LOG_EXERCISES : contains
     WORKOUT_LOG_EXERCISES ||--o{ WORKOUT_LOG_SETS : contains
@@ -52,7 +53,18 @@ erDiagram
         uuid program_id FK "set = master template"
         uuid client_id FK "set = client plan clone"
     }
+    EVENTS {
+        uuid id PK
+        uuid client_id FK
+        uuid template_id FK "set = a scheduled workout (2026-11-16), ON DELETE CASCADE"
+    }
 ```
+
+**`events.template_id`** (added 2026-11-16, [script](../scripts/add-event-workout-link-2026-11-16.sql)): a calendar event that points at a
+workout is a **scheduled workout**. The app treats it as a planned session (`_scheduledByDate` / `_mergePlanned`, app-calendar-goals.js).
+The `events_guard_template` trigger allows, for a signed-in user, only their own Personal-library workout (`coach_id = auth.uid()`, `is_personal`, and
+`client_id`, `program_id`, `generated_from_phase_id` all null) on their own Personal record (`clients.user_id = auth.uid()`, `coach_id` null),
+with `created_by = auth.uid()`. An event with `template_id` null is an ordinary event.
 
 ## The two-level editing model (the part that matters most)
 

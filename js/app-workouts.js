@@ -5571,9 +5571,13 @@ function _ywItemHtml({ t, src, u, locked }) {
   const meta = `${n} exercise${n !== 1 ? 's' : ''}${u ? ` · last done ${_dashFormatDate(u.last)} · done ${u.n} time${u.n !== 1 ? 's' : ''}` : ' · not done yet'}`
   const exs = [...(t.workout_template_exercises || [])].sort((a, b) => a.order_index - b.order_index)
   const copyBtn = `<button type="button" class="btn-secondary" data-yw-copy onclick="copyWorkout('${t.id}')">Make a copy</button>`
+  // Put this workout on a day (2026-11-16, Personal view only): only a row of your own library ('you' rows are read with client_id, program_id and
+  // generated_from_phase_id all null) - a plan's session already has its day, and the database guard refuses anything else.
+  const schedBtn = _isPersonalView() && src === 'you'
+    ? `<button type="button" class="btn-secondary" data-yw-schedule onclick="_openScheduleSheet('${t.id}')">Add to calendar</button>` : ''
   const acts = locked
     ? `<div class="wk-lock" data-yw-lock>${_WK_LOCK_SVG}<span>Part of your active plan${planName ? `, ${escapeHtml(planName)},` : ''} so it can only be changed in Plans.</span></div><div class="wk-acts">${programId ? `<button type="button" class="btn-secondary" data-yw-plan onclick="openWorkoutPlan('${programId}')">Open in Plans</button>` : ''}${copyBtn}</div>`
-    : `<div class="wk-acts"><button type="button" class="btn-secondary" data-yw-edit onclick="editWorkout('${t.id}')">Edit</button>${copyBtn}</div>`
+    : `<div class="wk-acts"><button type="button" class="btn-secondary" data-yw-edit onclick="editWorkout('${t.id}')">Edit</button>${copyBtn}${schedBtn}</div>`
   return `<div class="wk-item">
       <div class="wk-row" data-your-workout>
         <button type="button" class="wk-grow wk-toggle" data-yw-toggle aria-expanded="false" aria-controls="yw-${t.id}" onclick="toggleYourWorkout('${t.id}')"><span class="wk-name">${escapeHtml(t.name)}</span><span class="wk-meta">${meta}</span></button>

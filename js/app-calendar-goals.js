@@ -68,6 +68,155 @@ function _programWorkoutsByDateAll(assignments, cpwMap, { fromStart = false } = 
   return out
 }
 
+// ─── Scheduled workouts (Personal view, 2026-11-16) ─────────────────────────────────────────────────────────────────────────────
+// docs/bugs/2026-11-16-new-workout-cannot-be-scheduled-or-seen-on-dashboard.md. A workout put on a day is a calendar event whose template_id
+// points at one of the person's own library workouts (scripts/add-event-workout-link-2026-11-16.sql; its guard refuses anything else). These
+// helpers turn such events into the SAME shape a plan session has (workout_templates.name, _clientTemplateId = what ▶ Start runs), so the
+// dashboard, the week strip, the calendar, done and missed all treat them as planned without a second rule.
+const _SCHED_EXERCISE_COLS = 'exercise_name, exercise_type, metric_type, order_index, sets_json'
+
+// { 'YYYY-MM-DD': [session, ...] } from events rows carrying template_id. Rows without a template_id are ordinary events and are skipped.
+function _scheduledByDate(rows) {
+  const out = /** @type {Record<string, any[]>} */ ({})
+  for (const ev of rows || []) {
+    if (!ev || !ev.template_id || !ev.date) continue
+    const t = ev.workout_templates || null
+    ;(out[String(ev.date).slice(0, 10)] ||= []).push({
+      id: 'sched:' + ev.id, _scheduled: true, _scheduledEventId: ev.id, _clientTemplateId: ev.template_id, session_order: 99,
+      workout_templates: { id: ev.template_id, name: t?.name || ev.title || 'Workout', workout_template_exercises: t?.workout_template_exercises || [] },
+      _clientExercises: t?.workout_template_exercises || [],
+    })
+  }
+  return out
+}
+
+// A plan's day map with the scheduled workouts added after the plan's own sessions. Neither input is changed.
+function _mergePlanned(plan, scheduled) {
+  const out = {}
+  for (const [ds, arr] of Object.entries(plan || {})) out[ds] = [...(arr || [])]
+  for (const [ds, arr] of Object.entries(scheduled || {})) out[ds] = [...(out[ds] || []), ...(arr || [])]
+  return out
+}
+
+// The person's scheduled workouts between two dates (either may be null = open-ended). Resolves { data, error }; a failed read is reported, never an empty week.
+function _readScheduled(clientId, from, to) {
+  if (!clientId) return Promise.resolve({ data: [], error: null })
+  // unbounded-ok: .limit(1000) two lines down (the query is built in steps); one person's scheduled workouts over a year's lookback, far below it
+  let q = db.from('events').select(`id, date, title, template_id, workout_templates(id, name, workout_template_exercises(${_SCHED_EXERCISE_COLS}))`)
+    .eq('client_id', clientId).not('template_id', 'is', null)
+  if (from) q = q.gte('date', from)
+  if (to) q = q.lte('date', to)
+  return q.order('date').order('id').limit(1000)
+}
+
+// After a scheduling change, repaint whichever page is showing so the new day appears (or disappears) at once.
+function _refreshAfterSchedule() {
+  const el = document.getElementById('main-content')
+  if (!el) return
+  if (currentPage === 'calendar') return renderCalendar(el)
+  if (currentPage === 'solo-dashboard') return renderSoloDashboard(el)
+}
+
+// Puts one of the person's own library workouts on a day. The name is read back from their own workouts first: it becomes the event's title,
+// and a workout that is not theirs (or has gone) is refused here before the database guard would refuse it.
+async function _scheduleWorkout(templateId, ds) {
+  if (!templateId || !/^\d{4}-\d{2}-\d{2}$/.test(ds || '')) { showToast('Pick a day first'); return false }
+  const clientId = await _getCurrentClientId()
+  if (!clientId) { showToast('Could not find your record'); return false }
+  // The same rule as the database guard: one of your own Personal-library workouts (not a client's copy, not a plan's session).
+  const { data: t, error: tErr } = await db.from('workout_templates').select('id, name').eq('id', templateId).eq('coach_id', currentUser.id)
+    .is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', true).maybeSingle()
+  if (tErr || !t) { log.error('_scheduleWorkout', 'workout not found among your own', tErr); showToast('That workout could not be found'); return false }
+  // `any`: the type checker's copy of the events columns predates template_id (scripts/add-event-workout-link-2026-11-16.sql).
+  const row = /** @type {any} */ ({ client_id: clientId, created_by: currentUser.id, title: t.name, type: 'session', date: ds, is_pt_assigned: false, template_id: t.id })
+  const { data: added, error } = await db.from('events').insert(row).select('id')
+  if (error || !added?.length) { log.error('_scheduleWorkout', 'insert failed', error); showToast('Could not add it to your calendar. Try again.'); return false }
+  log.ok('_scheduleWorkout', 'scheduled', { templateId: t.id, date: ds })
+  showToast(`Added to ${ds === _ymdLocal(new Date()) ? 'today' : _dashFormatDate(ds)}`, 'success')
+  _refreshAfterSchedule()
+  return true
+}
+
+// Takes a scheduled workout off its day. The workout itself stays in the person's workouts; only the calendar entry goes. Rowcount-checked:
+// a refused delete returns no error and no row.
+async function _unscheduleWorkout(eventId, ds, btn = null) {
+  if (btn) btn.disabled = true   // a second tap would delete nothing and report a failure after the first succeeded (review, 2026-11-16)
+  const { data: removed, error } = await db.from('events').delete().eq('id', eventId).eq('created_by', currentUser.id).not('template_id', 'is', null).select('id')
+  if (error || !removed?.length) { log.error('_unscheduleWorkout', 'delete removed no rows', error); showToast('Could not remove it. Try again.'); if (btn) btn.disabled = false; return }
+  log.ok('_unscheduleWorkout', 'removed', { eventId, date: ds })
+  document.getElementById('client-day-modal')?.remove()
+  showToast(`Removed from ${ds === _ymdLocal(new Date()) ? 'today' : _dashFormatDate(ds)}. The workout stays in your workouts.`, 'success')
+  _refreshAfterSchedule()
+}
+
+// "+ Add a workout" for a day: the same list of workouts as the old Train anyway picker (the person's own library), one tap adds it.
+async function _openAddWorkoutSheet(ds) {
+  // Read first, then swap the day sheet for this one: closing it before the read left nothing on screen on a slow connection (review, 2026-11-16).
+  const { data, error } = await db.from('workout_templates').select('id, name').eq('coach_id', currentUser.id).is('client_id', null).is('program_id', null).is('generated_from_phase_id', null).eq('is_personal', true).order('name').limit(2000)
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'add-workout-modal'
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+  const when = ds === _ymdLocal(new Date()) ? 'today' : _dashFormatDate(ds)
+  const list = error ? '<p class="modal-error" data-aw-error>Could not load your workouts. Check your connection and try again.</p>'
+    : !(data || []).length ? '<p class="wk-sub" data-aw-empty>You have no workouts yet. Create one on the Workouts page first.</p>'
+    : `<div class="aw-list">${data.map(t => `<button type="button" class="aw-item" data-aw-template="${escapeHtml(t.id)}" onclick="_pickWorkoutForDay('${escapeAttr(t.id)}','${ds}')">${escapeHtml(t.name)}</button>`).join('')}</div>`
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;width:92%">
+      <div class="modal-header">
+        <h2 class="modal-title">Add a workout · ${escapeHtml(when)}</h2>
+        <button class="modal-close" aria-label="Close" onclick="document.getElementById('add-workout-modal').remove()">✕</button>
+      </div>
+      <div style="padding:4px 20px 20px">${list}</div>
+    </div>`
+  document.getElementById('client-day-modal')?.remove()
+  mountModal(overlay)
+}
+
+async function _pickWorkoutForDay(templateId, ds) {
+  const modal = document.getElementById('add-workout-modal')
+  modal?.querySelectorAll('button').forEach(b => { b.disabled = true })
+  const ok = await _scheduleWorkout(templateId, ds)
+  if (ok) modal?.remove()
+  else modal?.querySelectorAll('button').forEach(b => { b.disabled = false })
+}
+
+// "Add to calendar" on a workout: pick the day (today unless changed), then the same save as above.
+function _openScheduleSheet(templateId) {
+  const today = _ymdLocal(new Date())
+  const overlay = document.createElement('div')
+  overlay.className = 'modal-overlay'
+  overlay.id = 'schedule-workout-modal'
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove() }
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px;width:92%">
+      <div class="modal-header">
+        <h2 class="modal-title">Add to calendar</h2>
+        <button class="modal-close" aria-label="Close" onclick="document.getElementById('schedule-workout-modal').remove()">✕</button>
+      </div>
+      <div class="field">
+        <label class="field-label" for="sw-date">Day</label>
+        <input class="field-input" id="sw-date" type="date" value="${today}" min="${today}">
+      </div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="document.getElementById('schedule-workout-modal').remove()">Cancel</button>
+        <button class="btn-primary" id="sw-save" onclick="_saveScheduleSheet('${escapeAttr(templateId)}')">Add to calendar</button>
+      </div>
+    </div>`
+  mountModal(overlay)
+}
+
+async function _saveScheduleSheet(templateId) {
+  const input = /** @type {HTMLInputElement|null} */ (document.getElementById('sw-date'))
+  const btn = /** @type {HTMLButtonElement|null} */ (document.getElementById('sw-save'))
+  const ds = input?.value || ''
+  if (ds && ds < _ymdLocal(new Date())) { showToast('Pick today or a later day'); return }
+  if (btn) btn.disabled = true
+  const ok = await _scheduleWorkout(templateId, ds)
+  if (ok) document.getElementById('schedule-workout-modal')?.remove()
+  else if (btn) btn.disabled = false
+}
+
 async function renderCalendar(el) {
   const now = new Date()
   calendarYear  = calendarYear  ?? now.getFullYear()
@@ -93,7 +242,7 @@ async function renderCalendar(el) {
     const clientsId = resolvedId
 
     // Step 2: events + client_programs in parallel (client_programs uses clients.id not auth uid)
-    const [evRes, cpRes, logRes] = await Promise.all([
+    const [evRes, cpRes, logRes, schedRes] = await Promise.all([
       // Filtered to THIS client record, as the own-dashboard's events read is. It leaned on RLS alone until 2026-10-18, and for a master account in solo view
       // RLS also returns its coaching clients' events ("coach access"), so the Personal calendar showed them. Every events insert from a client or solo login sets
       // client_id (saveClientEvent), so their own events all stay; a master account's client-less events made in coach view are coach-calendar events and no longer
@@ -108,9 +257,14 @@ async function renderCalendar(el) {
       // One month of the person's own sessions. The embed is there to drop abandoned starts, as Recent sessions does.
       clientsId
         ? db.from('workout_logs').select('date, workout_log_exercises(id)').eq('client_id', clientsId).gte('date', from).lte('date', to).order('date').limit(200)
-        : Promise.resolve({ data: [], error: null })
+        : Promise.resolve({ data: [], error: null }),
+      // The workouts the person put on a day this month (2026-11-16). They are drawn as planned sessions, not as event dots.
+      _readScheduled(clientsId, from, to),
     ])
-    events = evRes.data
+    // A scheduled workout is drawn as a session; listing it again as an event would show it twice.
+    events = (evRes.data || []).filter(e => !e.template_id)
+    if (schedRes.error) log.error('renderCalendar', 'scheduled workouts read failed', schedRes.error)
+    const scheduled = _scheduledByDate(schedRes.data)
     if (logRes.error) log.error('renderCalendar', 'sessions read failed', logRes.error)
     else {
       logsByDate = {}
@@ -142,9 +296,12 @@ async function renderCalendar(el) {
     // start_date parsed, and a null _mondayOfWeek would throw and kill the whole calendar render.
     if (drawn.some(cp => cp.start_date && _mondayOfWeek(cp.start_date))) {
       Object.assign(programWorkoutsByDate, _programWorkoutsByDateAll(drawn, _cpwMap))
-      window._calProgramWorkouts = programWorkoutsByDate
       plannedFromStart = _programWorkoutsByDateAll(drawn, _cpwMap, { fromStart: true })   // the dashboard's rule: days before a plan started are not missed
     }
+    // Scheduled workouts count as planned wherever a plan session does (the grid, done/missed, the day sheet), with or without a plan.
+    programWorkoutsByDate = _mergePlanned(programWorkoutsByDate, scheduled)
+    plannedFromStart = _mergePlanned(plannedFromStart, scheduled)
+    window._calProgramWorkouts = programWorkoutsByDate
   } else {
     const [evRes, clRes] = await Promise.all([
       // SCOPE-OK: the coach calendar spans every client AND the coach's own client-less events, so there is no single id to filter on; RLS ("coach access": events on the coach's clients, or any event the coach created) scopes it - which also returns the master account's events on its OWN personal record, drawn with no client name (named in docs/technical-debt.md)
@@ -215,8 +372,8 @@ async function renderCalendar(el) {
                 </div>
                 ${hasWorkouts ? dayWorkouts.map(pw => `
                   <div style="margin-top:2px">
-                    ${dayWorkouts.length > 1 ? `<div style="font-size:7px;font-weight:700;color:${isToday?'var(--on-accent)':'var(--accent)'};opacity:${isToday?.8:1};letter-spacing:.04em;line-height:1">${pw.session_order===2?'PM':'AM'}</div>` : ''}
-                    <div style="font-size:8px;font-weight:600;color:${isToday?'var(--on-accent)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2">${escapeHtml((pw.workout_templates?.name||'').replace(/ —.*/, ''))}</div>
+                    ${dayWorkouts.filter(x => !x._scheduled).length > 1 && !pw._scheduled ? `<div style="font-size:7px;font-weight:700;color:${isToday?'var(--on-accent)':'var(--accent)'};opacity:${isToday?.8:1};letter-spacing:.04em;line-height:1">${pw.session_order===2?'PM':'AM'}</div>` : ''}
+                    <div ${pw._scheduled ? 'data-cal-scheduled ' : ''}style="font-size:8px;font-weight:600;color:${isToday?'var(--on-accent)':'var(--text)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2">${pw._scheduled ? '+ ' : ''}${escapeHtml((pw.workout_templates?.name||'').replace(/ —.*/, ''))}</div>
                   </div>`).join('') : ''}
                 <div style="display:flex;flex-wrap:wrap;gap:2px;margin-top:2px">
                   ${dayEvents.slice(0,3).map(e =>
@@ -329,6 +486,7 @@ function showClientDayDetail(dateStr) {
             ${multi ? `<div style="font-size:var(--text-xs, 10px);font-weight:700;color:var(--accent);letter-spacing:.06em;margin-bottom:4px">SESSION ${si+1}/${workouts.length}</div>` : ''}
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${exs.length ? '8px' : '10px'}">
               <span style="font-size:var(--legacy-text-15, 15px);font-weight:600">${escapeHtml((pw.workout_templates?.name || 'Workout').replace(/ — W\d+/, ''))}</span>
+              ${pw._scheduled ? '<span class="badge badge-active" data-day-added title="You added this workout; it is not part of your plan">Added</span>' : ''}
             </div>
             ${exs.length ? `
             <div style="margin-bottom:10px;padding:6px 8px;background:var(--surface-2);border-radius:var(--radius-sm, 8px)">
@@ -358,12 +516,14 @@ function showClientDayDetail(dateStr) {
                 </div>`}).join('')}
             </div>` : ''}
             <button onclick="startWorkoutRunner('${clientId}','${pw._clientTemplateId||pw.workout_templates?.id}');document.getElementById('client-day-modal').remove()" class="btn-primary" style="width:100%">▶ Start workout</button>
+            ${pw._scheduled ? `<button type="button" class="btn-secondary" data-day-remove style="width:100%;margin-top:8px" onclick="_unscheduleWorkout('${escapeAttr(pw._scheduledEventId)}','${dateStr}',this)">Remove from this day</button>` : ''}
           </div>`}).join('') : `
           <div style="text-align:center;padding:24px 0">
             <div style="font-size:var(--text-display, 32px);margin-bottom:8px">🛋️</div>
             <div style="font-size:var(--legacy-text-15, 15px);font-weight:600;margin-bottom:4px">Rest day</div>
             <div style="font-size:var(--text-base, 13px);color:var(--text-muted)">No sessions scheduled</div>
           </div>`}
+        ${_isPersonalView() && dateStr >= _ymdLocal(new Date()) ? `<button type="button" class="btn-secondary" data-day-add-workout style="width:100%;margin-top:12px" onclick="_openAddWorkoutSheet('${dateStr}')">+ Add a workout</button>` : ''}
       </div>
     </div>`
 

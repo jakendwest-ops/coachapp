@@ -1075,6 +1075,11 @@ body:has(.modal-overlay:not([style*="display:none"]):not([style*="display: none"
 .wk-name { overflow-wrap:anywhere; font-size:var(--text-base); font-weight:700; }
 .wk-meta { font-size:var(--text-sm); color:var(--text-muted); }
 .wk-go { flex-shrink:0; min-height:40px; padding:0 14px; }
+/* "+ Add a workout" for a day (2026-11-16): one tap per workout, the list scrolls inside the sheet */
+.aw-list { display:flex; flex-direction:column; gap:6px; max-height:60vh; overflow-y:auto; }
+.aw-item { min-height:44px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); color:var(--text); font:inherit; font-weight:500; text-align:left; cursor:pointer; overflow-wrap:anywhere; }
+.aw-item:hover { background:var(--surface-2); }
+.aw-item:disabled { opacity:.6; cursor:default; }
 /* Your workouts: a row is a card that expands in place (2026-10-13) */
 .wk-item { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); overflow:hidden; }
 .wk-item .wk-row { border:0; border-radius:0; background:none; }

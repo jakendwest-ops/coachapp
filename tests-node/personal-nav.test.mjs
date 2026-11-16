@@ -26,16 +26,19 @@ describe('Personal view nav', () => {
     assert.equal(p(undefined), null)
   })
 
-  test('Today on a rest day: Personal view says Train anyway; a coached client still says Log a workout', () => {
+  // "Train anyway" became "+ Add a workout" on 2026-11-16 (Jake: clearer); it puts one of your workouts on that day.
+  test('Today on a rest day: Personal view says + Add a workout; a coached client still says Log a workout', () => {
     const hero = get('_dashHeroHtml')
     const day = { ds: '2026-10-31', today: true, kind: 'rest', planned: [], done: [] }
     const ctx = (role) => ({ role, clientId: 'c1', todayStr: '2026-10-31', days: [day], hasProgram: true, program: null, next: { date: '2026-11-02', title: 'Lower A' } })
     const solo = hero(day, ctx('solo')), client = hero(day, ctx('client'))
     assert.match(solo, /Rest day/)
     assert.match(solo, /Next up: Lower A/)
-    assert.match(solo, />Train anyway</)
-    assert.doesNotMatch(solo, /Log a workout/)
+    assert.match(solo, />\+ Add a workout</)
+    assert.match(solo, /_openAddWorkoutSheet\('2026-10-31'\)/, 'it adds to the day shown')
+    assert.doesNotMatch(solo, /Train anyway|Log a workout/)
     assert.match(client, />Log a workout</)
+    assert.doesNotMatch(client, /Add a workout/, 'a coached client does not schedule (Personal view only)')
   })
 
   // Five pills since 2026-11-01 (Jake): Goals, Records, Performance, Bodyweight, Cardio. Performance is its own page again (it was

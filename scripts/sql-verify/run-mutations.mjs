@@ -23,6 +23,7 @@ import { MUTATIONS as CLIENT_SIGNED_IN } from './client-signed-in.mutations.mjs'
 import { MUTATIONS as SOLO_WEEK_COPIES } from './solo-week-copies.mutations.mjs'
 import { MUTATIONS as USER_ID_GUARD } from './clients-user-id-guard.mutations.mjs'
 import { MUTATIONS as MERGE_LIFT_NAMES } from './merge-lift-names.mutations.mjs'
+import { MUTATIONS as EVENT_WORKOUT_LINK } from './event-workout-link.mutations.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const SUITES = [
@@ -42,6 +43,7 @@ const SUITES = [
   { name: 'solo user deletes and renumbers the week copies of their own plan', verifier: 'solo-week-copies.verify.mjs', mutations: SOLO_WEEK_COPIES },
   { name: 'clients.user_id guard: nobody links another person\'s login to a client row from the API', verifier: 'clients-user-id-guard.verify.mjs', mutations: USER_ID_GUARD },
   { name: 'merge_lift_names(): a person or their coach merges only that client\'s lift names, reversibly', verifier: 'merge-lift-names.verify.mjs', mutations: MERGE_LIFT_NAMES },
+  { name: 'events.template_id: a workout is scheduled only by its owner, on their own Personal record', verifier: 'event-workout-link.verify.mjs', mutations: EVENT_WORKOUT_LINK },
 ]
 
 const run = (verifier, key) => new Promise((resolve) => {
