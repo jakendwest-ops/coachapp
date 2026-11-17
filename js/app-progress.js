@@ -3238,7 +3238,7 @@ async function renderProgressStrength(el) {
   el.innerHTML = `
     ${_strengthHasAny(exercises, today) ? `<div class="pw-card" id="perf-story" data-strength-card>${_strengthCardInner(exercises, today, '6w')}</div>` : ''}
     <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
-    <div class="pf-bar"><span class="pf-count" id="pf-count"></span><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
+    <div class="pf-bar"><span class="pf-count" id="pf-count"></span><select class="field-input" id="pf-sort" aria-label="Sort exercises" onchange="_setTrendSort(this.value)" style="width:auto;padding:6px 28px 6px 10px;margin-left:auto">${[['recent', 'Recently trained'], ['az', 'A to Z']].map(([v, l]) => `<option value="${v}"${(window._trendState.sort === 'az' ? 'az' : 'recent') === v ? ' selected' : ''}>${l}</option>`).join('')}</select><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
     <div id="perf-ex-list"></div>`
   const story = el.querySelector('#perf-story')
   if (story) story._strength = { exercises, today, view: '6w', dash: false }      // what the pills repaint from
@@ -3298,6 +3298,8 @@ function _setTrendRange(r) {
   if (document.getElementById('perf-ex-list')) _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '')
   else renderProgressStrength(document.getElementById('perf-sub-content'))
 }
+// The Lifts list's order: 'recent' (the default) or 'az'. Re-renders from the cache, like the range and the search box.
+function _setTrendSort(v) { window._trendState.sort = v === 'az' ? 'az' : 'recent'; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
 function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = key; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
 
 // Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero
@@ -3918,6 +3920,7 @@ function _xsDraw(host, key) {
   }
   return _renderMetricChart(canvas, {
     labels, series, height: true, legend: false,
+    yFormat: v => `${_tickNum(v)} ${M.unit()}`,      // the unit on the axis (2026-11-17): the ticks were bare numbers
     selectedIndex: () => _xsSelIndex(st),
     onPick: i => { const s = st.plotted[i]; if (s) { st.sel = s.key; _xsRefreshSel(host) } },
     tooltipLabel: c => { const s = st.plotted[c.dataIndex]; return s && c.parsed.y != null && c.dataset.label !== 'Best' ? M.cap(s.m) : null },
@@ -3956,9 +3959,14 @@ let _perfView = null
 const _perfOpenMap = () => (window._trendState.open ||= new Map())
 
 // The folded line of a weight x reps card: the card's own caption for the measure it is on, else how many sessions it has.
+// With two or more sessions it also says which way the lift has gone since the first session in the range ("· +20 kg since 18 Aug", 2026-11-17), the
+// same words the open card shows under its heading (_xsPlainFacts), so a folded list answers "which lifts are moving?" without opening each one.
 function _perfXsSummary(model, metric) {
   const n = model.shown.length
-  return _xsCaption(model, metric) || (n ? `${n} session${n === 1 ? '' : 's'}` : 'No sessions in this range')
+  const caption = _xsCaption(model, metric)
+  if (!caption) return n ? `${n} session${n === 1 ? '' : 's'}` : 'No sessions in this range'
+  const p = _xsPick(model, metric), since = p ? _xsPlainFacts(model.shown, p.M).since : ''
+  return since ? `${caption} · ${since}` : caption
 }
 
 // A card's shell: a real button (name, one-line best, badge, chevron) over the body. `body` is '' for a folded card.
@@ -4019,7 +4027,11 @@ function _renderPerfExerciseList(query) {
   const cutoffDays = _TREND_RANGES[window._trendState.range]
   const cutoff = cutoffDays === Infinity ? 0 : Date.now() - cutoffDays * 86400000
   const all = window._trendCache || []
-  const list = all.filter(ex => !q || ex.name.toLowerCase().includes(q))
+  // Most recently trained first (2026-11-17, audit backlog #11: the main lifts were buried alphabetically), name as the tie-break; 'az' is A to Z.
+  // _buildExerciseSeries returns the list A to Z with each exercise's sessions oldest first, so the last session is its latest.
+  const lastDate = ex => (ex.sessions || []).reduce((m, s) => (s.date > m ? s.date : m), '')
+  const sorted = window._trendState.sort === 'az' ? all : [...all].sort((a, b) => (lastDate(b) > lastDate(a) ? 1 : lastDate(b) < lastDate(a) ? -1 : a.name.localeCompare(b.name)))
+  const list = sorted.filter(ex => !q || ex.name.toLowerCase().includes(q))
   const openMap = _perfOpenMap()
   if (!list.length) {
     listEl.innerHTML = '<div class="empty-state"><p>No matching exercises.</p></div>'

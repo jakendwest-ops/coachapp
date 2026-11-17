@@ -36,7 +36,8 @@ async function showMyProgress(page, world = WORLD) {
   await installCappedApi(page, { workout_log_exercises: world })
   await page.evaluate(async (me) => {
     window._getCurrentClientId = async () => me
-    window._trendState = { range: 'All', metricByEx: {} }
+    // A to Z: the indexes below are by name. The list opens on most recently trained since 2026-11-17 (its own test at the end).
+    window._trendState = { range: 'All', metricByEx: {}, sort: 'az' }
     document.getElementById('pf-host')?.remove()
     const el = document.createElement('div'); el.id = 'pf-host'; el.className = 'main-content'; document.body.appendChild(el)
     await renderProgressStrength(el)
@@ -64,9 +65,10 @@ test.describe('My progress: fold-up exercise cards (2026-10-04)', () => {
     const s = await state(page)
     expect(s.map(c => c.name)).toEqual(['Lay A', 'Lay B', 'Lay C', 'Row 2k'])
     expect(s.every(c => !c.open && c.hidden && c.bodyLen === 0), 'folded: collapsed, hidden and empty').toBe(true)
-    expect(s[0].sum).toBe('Best top set: 110 kg × 5 · 5 sessions')
-    expect(s[1].sum).toBe('Best top set: 62.5 kg × 8 · 2 sessions')
-    expect(s[2].sum, 'one session reads as one session').toBe('Best top set: 40 kg × 10 · 1 session')
+    // The folded line says which way the lift has gone since the first session in the range (2026-11-17), not only its best.
+    expect(s[0].sum).toBe('Best top set: 110 kg × 5 · 5 sessions · +20 kg since 18 Aug')
+    expect(s[1].sum).toBe('Best top set: 62.5 kg × 8 · 2 sessions · +2.5 kg since 2 Sept')      // en-GB writes September as "Sept", as the open card does
+    expect(s[2].sum, 'one session reads as one session, with no direction to give').toBe('Best top set: 40 kg × 10 · 1 session')
     expect(s[3].sum, 'the other kinds of exercise fold too').toMatch(/^Best .+ · 2 sessions$/)
     expect(await charts(page), 'the page used to draw every chart at once').toBe(0)
   })
@@ -251,5 +253,26 @@ test.describe('My progress: fold-up exercise cards (2026-10-04)', () => {
     await page.locator('#pf-all').click()
     const open = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)
     expect(open, 'and none with every card open').toBeLessThanOrEqual(0)
+  })
+
+  // 2026-11-17 (audit backlog #11): the main lifts were buried alphabetically. The list opens on the lift trained most recently; A to Z is one tap away.
+  test('the list opens on the most recently trained lift, and the Sort select switches to A to Z and back', async ({ page }) => {
+    await showMyProgress(page)
+    await page.evaluate(async () => { window._trendState.sort = undefined; await renderProgressStrength(document.getElementById('pf-host')) })
+    const names = async () => (await state(page)).map(c => c.name)
+    expect(await names(), 'last trained: Lay A 15 Sep, Row 2k 11 Sep, Lay B 9 Sep, Lay C 3 Sep').toEqual(['Lay A', 'Row 2k', 'Lay B', 'Lay C'])
+    await expect(page.locator('#pf-sort')).toHaveValue('recent')
+    await page.locator('#pf-sort').selectOption('az')
+    expect(await names()).toEqual(['Lay A', 'Lay B', 'Lay C', 'Row 2k'])
+    await page.locator('#pf-sort').selectOption('recent')
+    expect(await names()).toEqual(['Lay A', 'Row 2k', 'Lay B', 'Lay C'])
+  })
+
+  test('an opened lift\'s chart has its unit on the axis', async ({ page }) => {
+    await showMyProgress(page)
+    await head(page, 'Lay A').click()
+    await expect(page.locator('#pf-host [data-pf-card="0"] canvas')).toBeVisible()
+    const tick = await page.evaluate(() => { const c = Chart.getChart(document.querySelector('#pf-host [data-pf-card="0"] canvas')); return c.options.scales.y.ticks.callback(100) })
+    expect(tick).toBe('100 kg')
   })
 })
