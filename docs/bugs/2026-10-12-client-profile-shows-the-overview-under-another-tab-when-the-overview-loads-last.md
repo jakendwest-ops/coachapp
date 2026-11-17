@@ -1,6 +1,6 @@
 ---
 id: 2026-10-12-client-profile-shows-the-overview-under-another-tab-when-the-overview-loads-last
-status: fixed-awaiting-jake
+status: closed
 priority: medium
 reported: 2026-10-12
 status_detail: "FIXED 2026-10-12 on master, unreleased (app-clients v21), at Jake's go ('fix'). Every tab render now gets its own fresh #tab-content pane (_freshTabPane in switchTab), so a superseded render writes into a pane that is no longer in the page. Red before, green after: tests/client-profile-tab-race-2026-10-12.spec.js (holds the Overview render open, taps Workouts, releases it). Closes when the full release suite runs without the rpe-e2e-journey / runner-edit-delete flake on this click."
@@ -34,3 +34,5 @@ Give every tab render its own host: `openClient` and `switchTab` replace `#tab-c
 Built: the Weight, Performance and 1RMs tab renderers now stop after their fetch when their pane is no longer in the page (`el.isConnected`). A superseded render still ran global side effects that hit the live tab: `_destroyManagedCharts` destroys EVERY chart (so a late Performance fetch blanked the Weight chart), Performance reset `window.__perfChartData`, 1RMs rebound `window._oneRMGridRows`. Each has a spec with a connected-pane control (`tests/client-profile-tab-race-2026-10-12.spec.js`, mutation-checked).
 
 **Still open (pre-existing, not worsened):** save and delete paths that repaint by looking `#tab-content` up by id AFTER an await will paint into whatever pane is live if the coach switched tabs mid-save: `app-programs.js` 461, 792, 834; `app-progress.js` 1090, 1112, 1133 (and the helpers at 24 and 37); `app-calendar-goals.js` 728, 855, 1174 (`deleteGoal` has no null guard); `app-runner.js` 3843 and 4064. The fix shape is to capture the pane before the await and repaint only if it is still connected. The window is narrow (a tab switch during a save), so it was named, not fixed.
+
+**closed_by:** 2026-11-17 on its own condition. `tests/client-profile-tab-race-2026-10-12.spec.js` went red before the fix and green after (recorded above), and neither `rpe-e2e-journey` nor `runner-edit-delete` flaked in the five release suites since (v2026.11.3 to v2026.11.7, flaky lists in `docs/releases/`).
