@@ -100,8 +100,6 @@ The tracking system regularly self-reports its own decay (`os-lint --report` at 
 mechanism are logged in [decisions.md](decisions.md) as they land (and in the archives it points to); don't duplicate that detail here.
 
 **Unfixed:**
-- **`docs/predictions.jsonl` has 7 duplicate `id` values**, 3 pairing a graded record with a still-overdue one (`pth-034`, `pth-090`, `pth-109`),
-  which is ambiguous for Rule 6's id-keyed logic. Needs Jake's own pass.
 - **Node: CI is pinned to 24 (2026-10-11); the dev machine is not.** CI ran 22 against local 24, which cost `v2026.09.12` its deploy. There is no
   `.nvmrc` or `engines`, so a future machine upgrade is caught only by `checks.sh`'s `[note]`, which is not a gate.
 - **Git-in-a-temp-folder self-tests that inherit git's environment.** From a LINKED worktree, `git push` runs its hook with `GIT_DIR` pointing at

@@ -192,10 +192,6 @@ const DATA_MODEL = env('OSLINT_DATA_MODEL', `${REPO}/docs/schema.md`)
 const DOCS_DIR = env('OSLINT_DOCS_DIR', `${REPO}/docs`)
 const CRITICAL   = env('OSLINT_CRITICAL',   `${REPO}/docs/critical.md`)
 const SQL_DIR    = env('OSLINT_SQL_DIR',    `${REPO}/scripts`)
-// Overridable ONLY so a detector can be proven RED→GREEN against a fixture; defaults to the repo file.
-// REPOINTED 2026-09-17: moved from the Vault into this repo (docs/predictions.jsonl, CoachApp-only
-// rows) — see docs/decisions.md's 2026-09-17 entry and guardrails.mjs RULE 6's comment.
-const PREDICTIONS = process.env.OSLINT_PREDICTIONS || `${REPO}/docs/predictions.jsonl`
 
 const REPORT = process.argv.includes('--report')
 const DAY = 86_400_000
@@ -449,26 +445,10 @@ function checkMemory () {
     for (const l of linked) if (!existsSync(join(MEM_DIR, l))) problems.push(`MEMORY.md points at ${l}, which does not exist`)
   }
 
-  // The memory system's JSONL ledger(s): one malformed line is silently skipped by every reader.
-  // predictions.jsonl moved from the Vault into this repo 2026-09-17 (CoachApp-only rows; see
-  // docs/decisions.md and guardrails.mjs RULE 6). lessons.jsonl/beliefs.jsonl dropped from this
-  // check 2026-09-18 — they stayed Vault-resident, and Jake was explicit that CoachApp should not
-  // read the Vault at all any more, not even to validate JSON well-formedness.
-  for (const [j, path] of [
-    ['predictions.jsonl', PREDICTIONS],
-  ]) {
-    const raw = read(path)
-    if (raw === null) { problems.push(`${path} is missing`); continue }
-    raw.split(/\r?\n/).forEach((line, i) => {
-      if (!line.trim()) return
-      try { JSON.parse(line) } catch { problems.push(`${j}:${i + 1} → unparseable JSON; this record is invisible to every reader`) }
-    })
-  }
-
   if (problems.length) {
     red('memory', `${problems.length} memory-system problem(s):\n    ` + problems.slice(0, 15).join('\n    ')
       + (problems.length > 15 ? `\n    …and ${problems.length - 15} more` : ''))
-  } else ok('memory', `memory system consistent (${files.length} files, ${names.size} named, index + predictions.jsonl parses)`)
+  } else ok('memory', `memory system consistent (${files.length} files, ${names.size} named, index consistent)`)
 }
 
 function checkCorpora () {
@@ -1321,37 +1301,24 @@ function checkClaudeMd () {
 }
 
 // ---------------------------------------------------------------------------
-// 11. Stale predictions — a CoachApp prediction past its verify_by date and still ungraded
-//     (outcome:null). Replaces hello-claude's manual "Step 8 — Predictions", a grep nobody acted
-//     on: it left 16 CoachApp predictions overdue and ungraded, some by 12 days. Calibration only
-//     works if the loop closes — an ungraded prediction past its date is the loop left open. Grade
-//     each true/false with Jake (the closure rule applies: Jake confirms, or red/green evidence
-//     does), then set "outcome". Scoped to CoachApp's own predictions — PTHub ended 2026-09-15;
-//     grading a dead project's predictions is exactly the theatre this move is meant to kill.
+// Jake-reported bugs per week (2026-11-17 health check): the outcome measure for the whole OS. Every
+// other check measures the process; this counts what got past it and reached Jake. A row counts when
+// its text says Jake reported it. Report-only (GREEN): a trend to read at the weekly check, not a gate.
 // ---------------------------------------------------------------------------
-function checkStalePredictions () {
-  const text = read(PREDICTIONS)
-  if (text === null) { warn('stale-predictions', `could not read ${PREDICTIONS}`); return }
-  const due = []
-  for (const line of text.split(/\r?\n/)) {
-    const t = line.trim()
-    if (!t) continue
-    let p
-    try { p = JSON.parse(t) } catch { warn('stale-predictions', `unparseable line skipped: ${t.slice(0, 60)}`); continue }
-    if (p.outcome !== null && p.outcome !== undefined) continue           // already graded
-    if (!/coachapp/i.test(p.project || '')) continue                      // CoachApp only; PTHub ended 2026-09-15
-    if (!p.verify_by) continue
-    const dueMs = Date.parse(p.verify_by)
-    if (Number.isNaN(dueMs) || dueMs > now) continue                      // not due yet
-    due.push({ age: Math.floor((now - dueMs) / DAY), id: p.id || '(no id)', verify_by: p.verify_by,
-               claim: (p.claim || '').replace(/[*`]/g, '').slice(0, 90) })
+function checkJakeReportedPerWeek () {
+  const rows = bugRows()
+  if (rows === null) return
+  const monday = iso => { const d = new Date(iso + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return d.toISOString().slice(0, 10) }
+  const weeks = []
+  for (let i = 0; i < 6; i++) weeks.push(monday(new Date(now - i * 7 * DAY).toISOString().slice(0, 10)))
+  const counts = Object.fromEntries(weeks.map(w => [w, 0]))
+  for (const r of rows) {
+    if (r.malformed || !/^\d{4}-\d{2}-\d{2}$/.test(r.reported || '')) continue
+    if (!/reported by jake|jake reported/i.test(r.statusDetail + ' ' + r.action)) continue
+    const w = monday(r.reported)
+    if (w in counts) counts[w]++
   }
-  if (!due.length) { ok('stale-predictions', 'no CoachApp prediction is past its verify_by date ungraded'); return }
-  due.sort((a, b) => b.age - a.age)
-  const shown = due.slice(0, 8).map(d => `${d.age}d overdue — ${d.id} (by ${d.verify_by}) — ${d.claim}`)
-  const more = due.length > shown.length ? `\n    …and ${due.length - shown.length} more` : ''
-  digest('stale-predictions', `${due.length} CoachApp prediction(s) past verify_by and still ungraded:\n    ` + shown.join('\n    ') + more
-    + '\n    Grade each true/false (Jake confirms, or red→green evidence does), then set "outcome". An ungraded prediction is calibration left open.')
+  ok('jake-reported', 'bugs Jake reported, by week starting (newest first): ' + weeks.map(w => `${w.slice(5)}: ${counts[w]}`).join(', '))
 }
 
 // ---------------------------------------------------------------------------
@@ -1489,10 +1456,6 @@ function runSelfTest () {
       env: { OSLINT_MEM_DIR: memDir('m5',
         { 'feedback_ok.md': '---\nname: feedback-ok\ndescription: d\nmetadata:\n  type: nonsense\n---\nb\n' },
         memIndex('ok')) } },
-    { check: 'memory', name: 'memory/jsonl-unparseable', expect: 'unparseable JSON',
-      env: { OSLINT_MEM_DIR: memDir('m6', Object.fromEntries([memOK('ok')]), memIndex('ok')),
-             OSLINT_PREDICTIONS: file('bad-predictions.jsonl', '{ this is not json\n') } },
-
     { check: 'corpus', name: 'corpus/skills-empty', expect: 'passing on an empty set',
       env: { OSLINT_SKILLS: join(root, 'nope') } },
 
@@ -1622,9 +1585,6 @@ function runSelfTest () {
         return { OSLINT_DEPLOY_CHECK_MARKER: m, OSLINT_FEATURE_AUDIT_MARKER: m, OSLINT_MOBILE_CHECK_MARKER: m } })() },
     { check: 'claude-md', expect: 'is missing',
       env: { OSLINT_CLAUDE_MD: join(root, 'no-claude-md') } },
-    { check: 'stale-predictions', expect: 'past verify_by and still ungraded',
-      env: { OSLINT_PREDICTIONS: file('p.jsonl', `{"id":"probe","project":"CoachApp","verify_by":"${OLD}","outcome":null,"prediction":"probe"}\n`) } },
-
     // OS v3 — RULE 0 for documents. One fixture per detector, each carrying exactly one defect.
     { check: 'context-budget', expect: 'exceed the budget',
       env: { OSLINT_STATUS: file('cb-status.md', 'x'.repeat(600)),
@@ -1643,9 +1603,6 @@ function runSelfTest () {
       env: { OSLINT_DOCS_DIR: (() => { const d = join(root, 'docsbudget'); mkdirSync(d, { recursive: true })
                writeFileSync(join(d, 'a.md'), 'x'.repeat(600)); writeFileSync(join(d, 'b.md'), 'y'.repeat(600)); return d })(),
              OSLINT_DOCS_BUDGET: '1000' } },
-    { check: 'masthead-drift', expect: 'understate their own freshness',
-      env: { OSLINT_STATUS: file('md-status.md', '# S\n_Last updated: 2026-01-01_\n\nwork landed 2026-06-01 and shipped.\n'),
-             OSLINT_ROADMAP: file('md-roadmap.md', '# R\n_Last updated: 2026-06-01_\n\nnothing newer here.\n') } },
     { check: 'doc-obligations', name: 'doc-obligations/data-model', expect: 'update whenever the schema changes',
       env: { OSLINT_DATA_MODEL: file('dm.md', 'stale schema doc'),
              OSLINT_SQL_DIR: sqlDirNewerThan(join(root, 'dm.md')),
@@ -1836,14 +1793,14 @@ function runSelfTest () {
 //     Cheap to compute, and it is the only check here that guards the cost of the OS itself.
 // ---------------------------------------------------------------------------
 function checkContextBudget () {
-  const docs = [['STATUS.md', STATUS], ['roadmap.md', ROADMAP]]
+  const docs = [['current-sprint.md', STATUS], ['roadmap.md', ROADMAP]]
   const m = measuredCeiling('context', docs, process.env.OSLINT_CONTEXT_BUDGET ? CONTEXT_BUDGET : 0, ['OSLINT_STATUS','OSLINT_ROADMAP'])
   if (m.missing) { warn('context-budget', `${m.missing} not found at ${m.path}`); return }
   const detail = m.sizes.join(' + ') + ` = ${m.total.toLocaleString()} chars`
   if (m.total > m.ceiling) {
     red('context-budget', `the docs every session reads in full exceed the budget: ${detail} (ceiling ${m.ceiling.toLocaleString()}, ${m.source}).\n`
-      + '    This is a cost every future session pays before any work starts. Move history to LOG.md —\n'
-      + '    STATUS.md holds LIVE STATE. Do not raise the ceiling to make this green; that is the failure\n'
+      + '    This is a cost every future session pays before any work starts. Delete what is no longer\n'
+      + '    true; these two files hold LIVE STATE. Do not raise the ceiling to make this green; that is the failure\n'
       + '    mode it exists to catch. The baseline ratchets DOWN on its own — it never needs raising.')
   } else {
     ok('context-budget', `session-read docs within budget (${detail}, ceiling ${m.ceiling.toLocaleString()}, ${m.source})`)
@@ -1950,39 +1907,6 @@ function checkDocsBudget () {
   } else {
     ok('docs-budget', `docs/*.md within budget (${detail}, ceiling ${m.ceiling.toLocaleString()}, ${m.source})`)
   }
-}
-
-// ---------------------------------------------------------------------------
-// 23. Masthead drift — a document whose "_Last updated:_" is older than its own newest content.
-//     One fact (how fresh is this doc?) in two representations, with nothing forcing agreement —
-//     the feedback-two-fields-one-fact class. On 2026-08-23 BOTH session-read documents were in this
-//     state: STATUS.md said 2026-08-12 with body content through 08-22, roadmap.md said 08-14 with a
-//     backlog header dated 08-23. A reader trusting the masthead skips content that is actually current.
-// ---------------------------------------------------------------------------
-function checkMastheadDrift () {
-  const todayISO = new Date(now).toISOString().slice(0, 10)
-  const docs = [['STATUS.md', STATUS], ['roadmap.md', ROADMAP]]
-  const drifted = []
-  let checked = 0
-  for (const [label, path] of docs) {
-    const text = read(path)
-    if (!text) continue
-    const m = text.match(/_Last updated:\s*(\d{4}-\d{2}-\d{2})/)
-    if (!m) continue
-    checked++
-    const masthead = m[1]
-    // Only dates already in the past can evidence staleness — a roadmap naturally names future targets.
-    const body = [...text.matchAll(/\b(\d{4}-\d{2}-\d{2})\b/g)].map(x => x[1]).filter(d => d <= todayISO)
-    if (!body.length) continue
-    const newest = body.sort().at(-1)
-    if (newest > masthead) drifted.push(`${label}: masthead says ${masthead} but its own body carries content dated ${newest}`)
-  }
-  if (!checked) { warn('masthead-drift', 'no document carried a parseable "_Last updated:_" masthead'); return }
-  if (drifted.length) {
-    red('masthead-drift', `${drifted.length} document(s) understate their own freshness:\n    ` + drifted.join('\n    ')
-      + '\n    Fix the masthead, not the body. A freshness marker that is itself stale is worse than none —\n'
-      + '    it tells the next session to skip content that is current.')
-  } else ok('masthead-drift', `every masthead matches its newest content (${checked} doc(s) checked)`)
 }
 
 // ---------------------------------------------------------------------------
@@ -2121,22 +2045,8 @@ function checkEventGateEvidence () {
   const seen = []   // every marker checked, for the clean-path summary line below
   const markerLabel = t => (t ? new Date(t).toISOString().slice(0, 10) : 'never')
 
-  // deploy-check vs. release tags — rare, deliberate events, so this one is worded with confidence.
-  try {
-    const raw = git('for-each-ref', 'refs/tags/v*', '--format=%(refname:short) %(creatordate:iso-strict)')
-    const tags = raw.split(/\r?\n/).filter(Boolean).map(l => {
-      const i = l.indexOf(' ')
-      return { tag: l.slice(0, i), time: Date.parse(l.slice(i + 1)) }
-    })
-    const marker = readEventMarker(DEPLOY_CHECK_MARKER)
-    seen.push(['deploy-check', marker])
-    const unmatched = tags.filter(t => t.time > marker.time)
-    if (unmatched.length) {
-      const newest = unmatched.reduce((a, b) => (a.time > b.time ? a : b))
-      notes.push(`deploy-check: ${unmatched.length} release tag(s) cut since its last run `
-        + `(marker: ${markerLabel(marker.time)}), newest ${newest.tag}`)
-    }
-  } catch { /* no tags yet, or this sub-check failed — does not block the other sub-checks */ }
+  // deploy-check is no longer counted against release tags (2026-11-17): its own trigger is a beta invite,
+  // and 34 tags passed without one, so the count was a warning nobody could act on.
 
   // feature-audit / mobile-check vs. commits touching UI-relevant paths.
   for (const [label, markerPath] of [['feature-audit', FEATURE_AUDIT_MARKER], ['mobile-check', MOBILE_CHECK_MARKER]]) {
@@ -2221,7 +2131,6 @@ checkDocsBudget()
 // [2026-09-27: its self-test spec was removed too — a retired check's spec kept the self-test from ever
 // passing, which is what kept the self-test marker stale and RED since 2026-09-16.]
 // checkContinuityBudget()
-checkMastheadDrift()
 checkDocObligations()
 checkEventGateEvidence()
 
@@ -2373,7 +2282,7 @@ checkVaultRootedSessions()
 // entry. No replacement mechanism was built for evidencing these gates fired from the repo side —
 // that's a real gap, not papered over, just no longer masquerading as a working check.
 checkClaudeMd()
-checkStalePredictions()
+checkJakeReportedPerWeek()
 
 const reds    = findings.filter(f => f.severity === 'RED')
 const warns   = findings.filter(f => f.severity === 'WARN')

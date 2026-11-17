@@ -168,6 +168,7 @@ continue appending future entries here, not in a separate file._
   data export reporting success while incomplete past the API's 200-row cap; a tenant clause a stub cannot see is not proven; a view's
   `security_invoker` reset by the next `create or replace view`; and the client `clients.coach_id` rewrite (fixed 2026-09-26).
 - **2026-10-05** — archived verbatim in [archive/critical-timeline-2026-10-05.md](archive/critical-timeline-2026-10-05.md): the stored-XSS checker cannot see an interpolation on a continuation line (still an open row: [2026-09-27-escaping-checker-cannot-see-an-interpolation-on-a-continuation-line.md](bugs/2026-09-27-escaping-checker-cannot-see-an-interpolation-on-a-continuation-line.md)), and three older security rows closed 2026-09-27.
+- **2026-11-17** — full-file review of app-progress, app-workouts, app-dashboard: no unguarded cross-tenant write; three copy-sync write paths in app-workouts rely on RLS alone with no app-side coach_id filter ([row](bugs/2026-11-17-copy-sync-writes-rely-on-rls-alone.md)), and the runner picker falls back to the user's own id as coach ([row](bugs/2026-11-17-exercise-picker-coach-id-falls-back-to-the-users-own-id.md)).
 
 ## Requires Validation
 

@@ -1,9 +1,7 @@
 # Roadmap
 
-A curated current-state summary. The feature-by-feature ledger is archived verbatim in
-[archive/roadmap-2026-09-08.md](archive/roadmap-2026-09-08.md); the fuller version of this file as it stood on 2026-10-05 (every shipped item
-with its row link) is [archive/roadmap-2026-10-05.md](archive/roadmap-2026-10-05.md). Tag-gated releases, not sprints:
-[current-sprint.md](current-sprint.md).
+A curated current-state summary. History: [archive/roadmap-2026-09-08.md](archive/roadmap-2026-09-08.md) and
+[archive/roadmap-2026-10-05.md](archive/roadmap-2026-10-05.md). Releases: [current-sprint.md](current-sprint.md).
 
 ## GDPR consent capture: 5 of 6 steps live, the row still says `deferred`
 
@@ -11,45 +9,34 @@ Shipped 2026-08-25: privacy policy, consent checkbox, a consent gate in `showApp
 gate. Left: confirming `delete_current_user()` exists in the database (needs Jake). Only Jake can change the row's status:
 [the ledger row](bugs/2026-08-11-gdpr-no-consent-capture-and-no-privacy-policy.md).
 
-## Solo product review (2026-10-29, nothing decided)
+## Solo product review (2026-10-29)
 
-A product-level review of Solo with a ranked MVP / V2 / V3 roadmap:
-[superpowers/plans/2026-10-29-solo-product-review.md](superpowers/plans/2026-10-29-solo-product-review.md). Recommendations only.
+Ranked MVP / V2 / V3: [superpowers/plans/2026-10-29-solo-product-review.md](superpowers/plans/2026-10-29-solo-product-review.md).
 Built: R4a, installable app, four-destination nav (MVP 7). Next: the 2026-10-31 chart designs in `superpowers/specs/`.
 
-## Current priorities (corrected 2026-10-05)
+## Current priorities
 
-- **Awaiting Jake's look on a phone:** every release from `v2026.09.14` to `v2026.10.8` (dark mode is the newest). The rows are the `fixed-awaiting-jake` files in [bugs/](bugs/).
-- **Waiting on Jake:** beeps with no extra tap (his sound test, [row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)).
-- **Open product question:** should Sign out end only *this device's* session? Today it ends every session for the account, so another device
-  looks signed in and then fails with "session expired". `signOut({ scope: 'local' })` would change that; it is a product and security call, so
-  it is not changed: [the row](bugs/2026-10-03-sign-out-ends-every-device-session.md).
-- **Design system Stage 4 (branding) — unblocked, awaiting Jake:** is Inter the brand typeface or a placeholder, how dense the runner should be,
-  whether there is a brand direction to set token values against. Stages 1-3 (vocabulary, ratchet, conversion) are done.
-- **The release plans:** R1, R2a/b/d and R4b shipped in `v2026.09.7`-`v2026.09.9`; the rest is not started
-  ([plan](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md), which supersedes this list for *what to build next*).
-  Week-structure edits (duplicate/delete/generate weeks) still change assigned clients' plans with no prompt: Jake's call (R5).
-- **Roster-size features (R2c, R3c, invite state, programme-and-week row):** Jake overrode the 2026-09-26 deferral on 2026-10-29 ("design for 25",
-  [decisions.md](decisions.md)). Built, unreleased: the current plan by date and "Assign next block". The rest is not started.
-- **Solo/signup:** the data model and invite-based onboarding are done; open public self-signup for new solo accounts is a deliberate deferral.
+- **Awaiting Jake's look on a phone:** the `fixed-awaiting-jake` files in [bugs/](bugs/); beeps with no extra tap (his sound test,
+  [row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)).
+- **Open product question:** should Sign out end only this device's session? Today it ends every session for the account
+  ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)).
+- **The release plans:** R1, R2a/b/d and R4b shipped; the rest is not started
+  ([plan](superpowers/plans/2026-09-19-product-review-ranked-backlog-and-releases.md)). Week-structure edits still change assigned clients'
+  plans with no prompt: Jake's call (R5).
+- **Roster-size features (R2c, R3c, invite state):** in scope since 2026-10-29 ("design for 25"); built so far: the current plan by date and
+  "Assign next block".
+- **Solo/signup:** invite-based onboarding is done; open public self-signup is a deliberate deferral.
 - **Security follow-up (2026-07-30):** `workout_log_exercises`/`workout_log_sets` are reasoned-safe but not behaviourally tested; several goal
-  writes (`saveGoalProgress`, `saveEditGoal`, `toggleMilestone`, `toggleClientMilestone`) share the same unanchored-write shape, lower priority.
+  writes share the same unanchored-write shape, lower priority.
 
-## Raised but deliberately deprioritized (Jake, 2026-07-11 — still relevant, not lost)
+## Raised but deliberately deprioritized (Jake, 2026-07-11)
 
 - **Error monitoring** is live (`app_errors`, read in Settings); the owner's card is unchecked on real data.
-- **Backup/restore:** free-tier point-in-time recovery is limited; a real restore has never been tried.
-- **Beta ops:** the "Send feedback" link is live; invite-email delivery to a non-Jake address was never tested.
-- **The API's silent 200-row cap:** known screens are fixed and `checks.sh` rule 9n refuses new unbounded reads; still open are the `clients`
-  roster reads and the sites named in [the row](bugs/2026-09-21-remaining-unbounded-reads-of-growing-tables-are-named-not-fixed.md).
+- **Backup/restore:** a real restore has never been tried.
+- **Beta ops:** invite-email delivery to a non-Jake address was never tested.
+- **The API's silent 200-row cap:** `checks.sh` rule 9n refuses new unbounded reads; still open:
+  [the row](bugs/2026-09-21-remaining-unbounded-reads-of-growing-tables-are-named-not-fixed.md).
 
 ## Named backlog items (unscoped)
 
-A real superset data model; the cardio side of runner Phase 2; a client-detach/cancellation workflow (a client can self-detach via the API with
-no PT-side notice); AMRAP/EMOM/circuit timer modes; a goals overhaul (mini-goals/milestones). The `sudoAsClient`/`exitSudo` role-flip class is in
-[technical-debt.md](technical-debt.md).
-
-## Requires Validation
-
-- Priorities above were rebuilt on 2026-10-05 from `current-sprint.md`, the release notes and the ledger, not re-run against the code.
-- The beta timeline is deliberately not restated here; see [vision.md](vision.md)'s Requires Validation.
+A client-detach/cancellation workflow; AMRAP/EMOM/circuit timer modes; a goals overhaul; the cardio side of runner Phase 2.
