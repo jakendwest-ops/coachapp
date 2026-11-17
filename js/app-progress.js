@@ -2031,7 +2031,6 @@ async function renderProgressPerSession(clientId, el) {
   // A failed read must not pass for an empty history.
   if (!all) { el.innerHTML = _couldntLoadHtml('the sessions'); return }
   if (!all.length) { el.innerHTML = '<div class="empty-state"><p>No sessions logged yet. Recent workouts will show here.</p></div>'; return }
-  const sessions = all.slice(0, _PERF_SESSIONS_SHOWN)
 
   // Chronological per-exercise history so any occurrence can find its own immediately-prior one.
   const history = {}
@@ -2045,17 +2044,52 @@ async function renderProgressPerSession(clientId, el) {
   })
   _sessionVolumeBack = 0
   const weeks = whole ? _weeklyVolume(all, _ymdLocal(new Date())) : null
-  const lastTime = sessions.map((s, i) => {
-    const prev = whole && _sessionHasSets(s) ? _previousSessionOf(all, i) : null
-    return prev ? { prev, cmp: _sessionCompare(s, prev) } : null
-  })
-  // `all` only from the whole history: the bars' steps must never page through a partial one.
-  window._perfSessionData = { sessions, history, weeks, lastTime, whole, all: whole ? all : null }
+  // `all` only from the whole history: the bars' steps must never page through a partial one. `list` is what the cards page through (the latest few on a failed read).
+  window._perfSessionData = { history, weeks, whole, all: whole ? all : null, list: all, sessions: [], lastTime: [] }
+  _perfSessionsShown = _PERF_SESSIONS_SHOWN
 
   const top = whole
     ? `<div id="perf-sess-volume">${_sessionVolumeHtml(weeks, _sessionVolumeMode, 0, _weeklyVolumeMaxBack(all, _ymdLocal(new Date())))}</div>`
     : '<div class="xs-sub" data-sessions-partial>Showing the latest sessions. Comparisons and weekly totals could not load.</div>'
-  el.innerHTML = top + sessions.map((s, i) => {
+  el.innerHTML = top + '<div id="perf-sess-cards"></div>'
+  _drawPerfSessionCards()
+}
+
+// The cards are the newest `_perfSessionsShown` sessions WITH sets (2026-11-17, audit backlog #10: abandoned starts took 8 of the 10 cards on the test client).
+// A started session with no sets met on the way is not dropped: it folds into one line under the cards, and opens to the same "No sets logged" card as before.
+// "Show older sessions" adds ten more, from the history already read. Card i is window._perfSessionData.sessions[i]: the real ones first, then the empty ones.
+let _perfSessionsShown = _PERF_SESSIONS_SHOWN
+function _drawPerfSessionCards() {
+  const host = document.getElementById('perf-sess-cards'), data = /** @type {any} */ (window)._perfSessionData
+  if (!host || !data || !data.list) return
+  _destroyManagedCharts()      // an exercise chart opened inside a card is about to be detached
+  const list = data.list, real = [], empty = []
+  let k = 0
+  for (; k < list.length && real.length < _perfSessionsShown; k++) (_sessionHasSets(list[k]) ? real : empty).push(k)
+  const older = list.slice(k).some(_sessionHasSets)
+  const order = [...real, ...empty]
+  data.sessions = order.map(j => list[j])
+  data.lastTime = order.map(j => {
+    const prev = data.whole && _sessionHasSets(list[j]) ? _previousSessionOf(list, j) : null
+    return prev ? { prev, cmp: _sessionCompare(list[j], prev) } : null
+  })
+  const card = i => _perfSessionCardHtml(data.sessions[i], i, data.lastTime[i], data.whole)
+  const n = empty.length
+  host.innerHTML = real.map((_, i) => card(i)).join('')
+    + (older ? '<button type="button" class="btn-secondary pw-all" data-sess-older onclick="_perfSessionsOlder()">Show older sessions</button>' : '')
+    + (n ? `<button type="button" class="pw-link" data-sess-empty-toggle aria-expanded="false" onclick="_toggleEmptySessions(this)">${n} started session${n === 1 ? '' : 's'} with no sets logged</button>`
+      + `<div data-sess-empty hidden>${empty.map((_, e) => card(real.length + e)).join('')}</div>` : '')
+}
+function _perfSessionsOlder() { _perfSessionsShown += _PERF_SESSIONS_SHOWN; _drawPerfSessionCards() }
+function _toggleEmptySessions(btn) {
+  const box = btn.nextElementSibling
+  if (!box) return
+  box.hidden = !box.hidden
+  btn.setAttribute('aria-expanded', String(!box.hidden))
+}
+
+// One session's card: its name and date, the four tiles (or "No sets logged"), and the line against last time.
+function _perfSessionCardHtml(s, i, vs, whole) {
     const exs = (s.workout_log_exercises || []).filter(e => e.exercise_name)
     const totals = exs.reduce((t, ex) => { const m = _diaryExMetrics(ex); t.sets += m.sets; t.reps += m.reps; t.vol += m.volume; return t }, { sets: 0, reps: 0, vol: 0 })
     const tiles = [['Sets', totals.sets, 'sets'], ['Reps', totals.reps, 'reps'], ['Volume', Math.round(weightToPref(totals.vol)).toLocaleString() + window._unitPrefs.weight, 'vol'], ['Exercises', exs.length, 'exercises']]
@@ -2063,12 +2097,11 @@ async function renderProgressPerSession(clientId, el) {
     // ended early) -- the 4 tiles above would then read "0 · 0 · 0kg · N", which reads as broken data
     // rather than an accurate empty state. Show a plain note instead of the tile row in that case.
     const noSetsLogged = totals.sets === 0
-    const vs = lastTime[i]
     const named = s.workout_templates?.family_id || _sessionName(s)
     // "First time" is a claim about the whole history, so it needs the whole history.
     const vsLine = noSetsLogged ? '' : vs ? _sessionVsLine(vs.cmp, vs.prev.date) : whole && named ? 'First time doing this workout' : ''
     return `
-    <div style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:10px;overflow:hidden">
+    <div data-sess-card${noSetsLogged ? ' data-sess-empty-card' : ''} style="border:1px solid var(--border);border-radius:var(--radius-md, 12px);margin-bottom:10px;overflow:hidden">
       <button onclick="_togglePerfSession(${i})" style="width:100%;padding:12px 14px;background:var(--surface-2);border:none;cursor:pointer;text-align:left">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
           <span style="font-size:var(--text-base, 13px);font-weight:700">${escapeHtml(s.name || 'Session')}</span>
@@ -2085,7 +2118,6 @@ async function renderProgressPerSession(clientId, el) {
       </button>
       <div id="perf-sess-${i}" style="display:none;padding:6px 14px 12px"></div>
     </div>`
-  }).join('')
 }
 
 function _togglePerfSession(i) {

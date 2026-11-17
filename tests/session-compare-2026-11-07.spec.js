@@ -58,6 +58,19 @@ test.describe('Sessions: vs last time', () => {
     await expect(exRow(page, 'Curl').locator('[data-sc-total]'), 'nothing to compare a new lift with').toHaveCount(0)
   })
 
+  test('the ten cards are ten real sessions, empty starts are counted under them, and Show older sessions adds ten more', async ({ page }) => {
+    const day = n => `2026-10-${String(30 - n).padStart(2, '0')}`
+    const real = Array.from({ length: 13 }, (_, n) => log('r' + n, day(n), 'W' + n, 'F' + n, [ex('Bench', [set(1, 100, 5)])]))
+    const empties = [log('e1', '2026-10-29', 'Empty A', null, [ex('Bench', [])]), log('e2', '2026-10-27', 'Empty B', null, [])]
+    await show(page, [real[0], empties[0], real[1], real[2], empties[1], ...real.slice(3)])
+    await expect(page.locator('#sc-host [data-sess-card]:not([data-sess-empty-card])')).toHaveCount(10)
+    await expect(page.locator('#sc-host [data-sess-empty-toggle]')).toHaveText('2 started sessions with no sets logged')
+    await page.locator('#sc-host [data-sess-older]').click()
+    await expect(page.locator('#sc-host [data-sess-card]:not([data-sess-empty-card])')).toHaveCount(13)
+    await expect(page.locator('#sc-host [data-sess-older]'), 'nothing older left').toHaveCount(0)
+    await expect(page.locator('#sc-host [data-sess-card]').nth(12)).toContainText('W12')
+  })
+
   test('the card and the panel agree on "up": one exercise improved, one of the two in both', async ({ page }) => {
     const better = log('l9', '2026-11-05', 'Upper wk6', 'F', [ex('Bench', [set(1, 105, 5), set(2, 100, 5), set(3, 100, 5)]), ex('Row', [set(1, 80, 8)])])
     await show(page, [better, LAST_TIME])
@@ -77,11 +90,16 @@ test.describe('Sessions: vs last time', () => {
     await expect(squat.locator('[data-sc-mark]'), 'nothing to compare with, so no Change column').toHaveCount(0)
   })
 
+  // 2026-11-17 (audit backlog #10): a started session with no sets no longer takes one of the ten cards. It folds into one line under them, and still says so when opened.
   test('a session with no sets says so, and claims no comparison', async ({ page }) => {
     await show(page, [log('l5', '2026-11-05', 'Upper wk6', 'F', [ex('Bench', [])]), LAST_TIME])
-    await expect(page.locator('#sc-host').getByText('No sets logged')).toBeVisible()
-    await expect(page.locator('#sc-host button').first().locator('[data-vs-last]')).toHaveCount(0)
-    await open(page, 0)
+    await expect(page.locator('#sc-host [data-sess-card]').first(), 'the real session leads').toContainText('Upper wk5')
+    await expect(page.locator('#sc-host').getByText('No sets logged', { exact: true }), 'folded away').toBeHidden()
+    await expect(page.locator('#sc-host [data-sess-empty-toggle]')).toHaveText('1 started session with no sets logged')
+    await page.locator('#sc-host [data-sess-empty-toggle]').click()
+    await expect(page.locator('#sc-host').getByText('No sets logged', { exact: true })).toBeVisible()
+    await expect(page.locator('#sc-host [data-sess-empty] [data-vs-last]')).toHaveCount(0)
+    await open(page, 1)
     await expect(page.locator('#perf-sess-0 [data-sc-verdict]'), 'nor "First time" in its panel: Bench was done last time (review, 2026-11-08)').toHaveCount(0)
   })
 
