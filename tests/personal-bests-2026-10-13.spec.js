@@ -100,7 +100,7 @@ test.describe('Personal Bests: a row per lift, and a page for each (2026-10-13)'
     await expect(host(page).locator('.pw-card').first()).toContainText('160 kg')
     await expect(host(page).locator('.pw-card').first()).toContainText('Recorded 8 Sep 2026 · was 150 kg on 1 Jul 2026')
     await expect(host(page).locator('.pw-card').first().locator('.pw-pill')).toHaveText('+10 kg')
-    await expect(host(page).locator('.pw-group')).toHaveText(['Best history', 'Best sets by reps', 'Estimated 1RM'])
+    await expect(host(page).locator('.pw-group')).toHaveText(['1RM history', 'Best sets by reps', 'Estimated 1RM'])
     // best history: newest first, each deletable
     const hist = host(page).locator('.pw-card', { has: page.locator('#pb-hist-chart') }).locator('.pw-item')
     await expect(hist.locator('.pw-item-date')).toHaveText(['8 Sep 2026', '1 Jul 2026'])
@@ -155,6 +155,31 @@ test.describe('Personal Bests: a row per lift, and a page for each (2026-10-13)'
     await row(page, 'Back Squat').click()
     await expect(host(page).locator('.pw-big').first()).toContainText('352.7')
     await expect(host(page).locator('.pw-item-w').first()).toHaveText('352.7 lb')
+  })
+
+  // docs/bugs/2026-11-17-personal-best-shows-latest-1rm-not-highest.md: a lower re-test (after an injury) must not replace the best. The latest is still shown, because
+  // % of 1RM sets are worked out from it.
+  test('a lower re-test: the best stays the highest on the list and the lift page, and the latest is shown beside it as the one % sets use', async ({ page }) => {
+    await soloView(page)
+    await show(page, { rows: [
+      { id: 'c', exercise_name: 'Back Squat', exercise_id: null, one_rm_kg: 140, recorded_at: '2026-09-08' },
+      { id: 'b', exercise_name: 'Back Squat', exercise_id: null, one_rm_kg: 160, recorded_at: '2026-08-01' },
+      { id: 'd1', exercise_name: 'Deadlift', exercise_id: 'ex-dl', one_rm_kg: 200, recorded_at: '2026-07-01' },
+      { id: 'a', exercise_name: 'Back Squat', exercise_id: null, one_rm_kg: 150, recorded_at: '2026-07-01' }
+    ] })
+    await expect(row(page, 'Back Squat').locator('.pb-best'), 'the best is 160, not the 140 saved since').toHaveText('160 kg')
+    await expect(row(page, 'Back Squat').locator('.pb-sub:not(.pb-latest)')).toHaveText('Recorded 1 Aug 2026')
+    await expect(row(page, 'Back Squat').locator('.pb-latest')).toHaveText('Latest 140 kg on 8 Sep 2026 · used for % sets')
+    await expect(row(page, 'Back Squat').locator('.pw-pill'), 'the newest entry is not a new best: no pill, green or red').toHaveCount(0)
+    await expect(row(page, 'Deadlift').locator('.pb-latest'), 'one entry: the best IS the latest, nothing extra').toHaveCount(0)
+    await row(page, 'Back Squat').click()
+    const card = host(page).locator('.pw-card').first()
+    await expect(card.locator('.pw-big')).toContainText('160')
+    await expect(card).toContainText('Recorded 1 Aug 2026 · was 150 kg on 1 Jul 2026')
+    await expect(card.locator('.pw-pill')).toHaveText('+10 kg')
+    await expect(card.locator('.pb-current')).toHaveText('Current 1RM 140 kg (8 Sep 2026), used for % of 1RM sets')
+    const hist = host(page).locator('.pw-card', { has: page.locator('#pb-hist-chart') }).locator('.pw-item-w')
+    await expect(hist, 'the history keeps every test, newest first').toHaveText(['140 kg', '160 kg', '150 kg'])
   })
 
   test('if the logged sessions cannot be read the page still shows the best history, and says so where the rest would be', async ({ page }) => {

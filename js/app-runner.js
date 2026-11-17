@@ -29,6 +29,22 @@
 // inserts a row" — see bugs/2026-08-29-runner-timer-interval-leaks-on-a-double-tapped-start.
 guardReentry('launchRunner')
 
+// Saved 1RM rows -> { byName, byId } of kg numbers, keeping the NEWEST row per lift (recorded_at, then created_at): % of 1RM targets are worked out from the
+// current 1RM, and a lower re-test is meant to lower them. The old maps were built with Object.fromEntries over an UNORDERED read, so the last row the
+// database happened to return won (docs/bugs/2026-11-17-runner-reads-saved-1rms-in-no-order.md). Names are trimmed and lower-cased, as the lookup expects.
+// Pure; tests-node/one-rm-best.test.mjs. The highest row is the Personal best, a different question (_pbBestOf, app-progress.js).
+function _oneRMLookup(rows) {
+  const newer = (a, b) => String(a.recorded_at || '') > String(b.recorded_at || '') || (String(a.recorded_at || '') === String(b.recorded_at || '') && String(a.created_at || '') > String(b.created_at || ''))
+  const keep = new Map()
+  for (const r of rows || []) {
+    const keys = [`n:${String(r.exercise_name || '').trim().toLowerCase()}`, ...(r.exercise_id ? [`i:${r.exercise_id}`] : [])]
+    for (const k of keys) if (!keep.has(k) || newer(r, keep.get(k))) keep.set(k, r)
+  }
+  // Object.fromEntries, not obj[k] = v: a lift is free text, and an assignment to "__proto__" would set the prototype instead of a key.
+  const pick = tag => Object.fromEntries([...keep].filter(([k]) => k[0] === tag).map(([k, r]) => [k.slice(2), parseFloat(r.one_rm_kg)]))
+  return { byName: pick('n'), byId: pick('i') }
+}
+
 async function _startFreshRunner(clientId) {
   // Unlock audio here too — this function can be reached directly from the
   // runner setup modal's Start button, bypassing startWorkoutRunner entirely.
@@ -41,9 +57,9 @@ async function _startFreshRunner(clientId) {
   // Fetch stored 1RMs for this client — used to compute kg targets from %1RM sets.
   // Keyed by both exercise_id (preferred — survives a name being retyped/renamed) and
   // trimmed-lowercase name (fallback for rows that predate the exercise_id link).
-  const { data: oneRMRows } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg').eq('client_id', clientId)
-  const oneRMByName = Object.fromEntries((oneRMRows || []).map(r => [r.exercise_name.trim().toLowerCase(), parseFloat(r.one_rm_kg)]))
-  const oneRMById   = Object.fromEntries((oneRMRows || []).filter(r => r.exercise_id).map(r => [r.exercise_id, parseFloat(r.one_rm_kg)]))
+  // client_1rms is append-only, so a lift can have many rows: _oneRMLookup keeps the NEWEST per lift, whatever order the rows arrive in.
+  const { data: oneRMRows } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg, recorded_at, created_at').eq('client_id', clientId).order('recorded_at', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false })
+  const { byName: oneRMByName, byId: oneRMById } = _oneRMLookup(oneRMRows)
 
   let exercises = []
   if (template) {
@@ -3094,12 +3110,12 @@ async function _lookupClientOneRM(name, exerciseId) {
   if (exerciseId) {
     const { data } = await db.from('client_1rms').select('one_rm_kg')
       .eq('client_id', _runner.clientId).eq('exercise_id', exerciseId)
-      .order('recorded_at', { ascending: false }).limit(1).maybeSingle()
+      .order('recorded_at', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle()      // same day: the one saved later, as _oneRMLookup
     if (data?.one_rm_kg) return parseFloat(data.one_rm_kg)
   }
   const { data } = await db.from('client_1rms').select('one_rm_kg')
     .eq('client_id', _runner.clientId).ilike('exercise_name', name)
-    .order('recorded_at', { ascending: false }).limit(1).maybeSingle()
+    .order('recorded_at', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false }).limit(1).maybeSingle()
   return data?.one_rm_kg ? parseFloat(data.one_rm_kg) : null
 }
 

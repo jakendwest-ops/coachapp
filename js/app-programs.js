@@ -763,7 +763,7 @@ async function _getProgramOneRMStatus(programId, clientId) {
   const neededByName = _neededOneRMsByName(phases)
   if (!neededByName.size) return { have: [], missing: [] }
 
-  const { data: existing } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg').eq('client_id', clientId).order('recorded_at', { ascending: false })
+  const { data: existing } = await db.from('client_1rms').select('exercise_id, exercise_name, one_rm_kg').eq('client_id', clientId).order('recorded_at', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false })      // same day: the one saved later is current, as the runner reads it (_oneRMLookup)
   const haveByName = {}, haveById = {}
   ;(existing || []).forEach(r => {
     const k = r.exercise_name.trim().toLowerCase()

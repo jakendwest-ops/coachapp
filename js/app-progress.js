@@ -50,7 +50,7 @@ function _refreshClientPerformance(clientId) {
 // ─── Personal Bests: one clean row per lift, and a page for each lift (Jake, 2026-10-13) ─────────────────────────────────────────────────────────────────────────────────────────────
 // "page needs UI rework. you should be able to click into an exercise and see exercise/personal best data for that exercise" (docs/bugs/2026-10-13-progress-page-needs-a-ui-rework-starting-with-the-body-weight-section.md;
 // prototype https://claude.ai/artifact/AvgWLiWo4ogERWiRzJJomm). The grid of number boxes with "Save all" (and its per-row date and estimate boxes) is gone. The list is a row per lift; a tap opens that
-// lift's own page; "Update best" there is the Add 1RM sheet (_showOneRMDetailModal: type it or estimate it from a set, with a date). client_1rms is APPEND-ONLY (the newest row per lift is the best), so every
+// lift's own page; "Update best" there is the Add 1RM sheet (_showOneRMDetailModal: type it or estimate it from a set, with a date). client_1rms is APPEND-ONLY (the newest row per lift is the CURRENT 1RM, which % sets use; the HIGHEST is the Personal best, _pbBestOf, 2026-11-17), so every
 // update is a new dated row and the history on the page is simply those rows. The weight is typed fresh in that sheet, so the lb round-trip drift the old grid had to guard against cannot occur.
 // The lifts are addressed by their position in window._pbLifts, never by name: a lift name is free text and has no business inside an attribute.
 let _pbLiftToken = 0
@@ -78,7 +78,7 @@ async function renderClient1RMs(clientId, el) {
   _pbShowPerformance(true)
   el.innerHTML = '<div class="loading-state">Loading 1RMs…</div>'
   // Paged: the API caps a response at 200 rows without saying so, and past that whole lifts would drop off the list. `id` is the unique tie-break the paging needs.
-  const { data: rows, error } = await _fetchAllRows(() => db.from('client_1rms').select('*', { count: 'exact' }).eq('client_id', clientId).order('recorded_at', { ascending: false }).order('id', { ascending: false }))
+  const { data: rows, error } = await _fetchAllRows(() => db.from('client_1rms').select('*', { count: 'exact' }).eq('client_id', clientId).order('recorded_at', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false }))      // created_at: two entries on one day, the one saved later is the latest, as the runner reads it (_oneRMLookup); id (a random uuid) is only the paging tie-break
   if (!el.isConnected || window._pbOpenLift) return    // superseded by a newer tab, or by opening a lift
   if (error) {
     el.innerHTML = _pbError("Couldn't load your 1RMs")
@@ -100,10 +100,12 @@ async function renderClient1RMs(clientId, el) {
     if (!l.entries.length) {
       return `<div class="pb-row pb-row-static"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-sub">Not recorded yet</span></span><button type="button" class="btn-secondary pb-record" onclick="recordBest('${clientId}',${i})">Record best</button></div>`
     }
-    const latest = l.entries[0], prev = l.entries[1]
-    const diff = prev ? parseFloat(latest.one_rm_kg) - parseFloat(prev.one_rm_kg) : 0
-    const pill = diff ? `<span class="pw-pill ${diff > 0 ? 'is-good' : ''}">${diff > 0 ? '+' : '−'}${_pbW(Math.abs(diff))}</span>` : ''
-    return `<button type="button" class="pb-row" onclick="openLiftPage('${clientId}',${i})"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-logged" data-pb-logged="${i}" hidden></span><span class="pb-sub">Recorded ${_pwFmtDate(latest.recorded_at)}</span></span>${pill}<strong class="pb-best">${_pbW(parseFloat(latest.one_rm_kg))}</strong>${chev}</button>`
+    // The BEST is the highest entry; the latest is shown beside it only when it is not the best (a lower re-test), because % sets use it. The pill is the gain a NEW best made.
+    const { best, prev, latest } = _pbBestOf(l.entries)
+    const gain = best === latest && prev ? parseFloat(best.one_rm_kg) - parseFloat(prev.one_rm_kg) : 0
+    const pill = gain > 0 ? `<span class="pw-pill is-good">+${_pbW(gain)}</span>` : ''
+    const latestLine = best !== latest ? `<span class="pb-sub pb-latest">Latest ${_pbW(parseFloat(latest.one_rm_kg))} on ${_pwFmtDate(latest.recorded_at)} · used for % sets</span>` : ''
+    return `<button type="button" class="pb-row" onclick="openLiftPage('${clientId}',${i})"><span class="pb-row-main"><span class="pb-name">${escapeHtml(l.name)}</span><span class="pb-logged" data-pb-logged="${i}" hidden></span><span class="pb-sub">Recorded ${_pwFmtDate(best.recorded_at)}</span>${latestLine}</span>${pill}<strong class="pb-best">${_pbW(parseFloat(best.one_rm_kg))}</strong>${chev}</button>`
   }
   const recorded = lifts.map((l, i) => ({ l, i })).filter(x => x.l.entries.length)
   const missing = lifts.map((l, i) => ({ l, i })).filter(x => !x.l.entries.length)
@@ -128,7 +130,7 @@ async function _showLoggedBests(clientId, lifts, el) {
   const best = Object.create(null)
   for (const ex of series) best[ex.name] = Math.max(0, ...ex.sessions.map(s => _sessionBestE1RM(s.sets)))
   lifts.forEach((l, i) => {
-    const saved = parseFloat(l.entries[0]?.one_rm_kg), mark = el.querySelector(`[data-pb-logged="${i}"]`)
+    const saved = parseFloat(_pbBestOf(l.entries).best?.one_rm_kg), mark = el.querySelector(`[data-pb-logged="${i}"]`)      // against the best the row shows, not the latest entry
     if (!mark || !(best[l.name] > saved + 0.5)) return
     mark.textContent = 'Logged best ≈ ' + fmtWeight(Math.round(best[l.name]), { spaced: true })
     mark.hidden = false
@@ -177,6 +179,20 @@ function _bestSetsByReps(sessions, targets) {
   })
 }
 
+// One lift's saved 1RMs (client_1rms rows, NEWEST FIRST, as both reads order them) -> { best, prev, latest }, each a row or null.
+//   best    the highest one_rm_kg; a tie goes to the newer row. This is the Personal best: a lower re-test after an injury must not replace it.
+//   prev    the highest row saved BEFORE best ("was ..."); a tie with best stays here, so an equal re-test claims no gain.
+//   latest  the newest row. % of 1RM sets are worked out from it (app-runner.js _oneRMLookup), so a lower re-test still sets the training weights.
+// docs/bugs/2026-11-17-personal-best-shows-latest-1rm-not-highest.md; tests-node/one-rm-best.test.mjs.
+function _pbBestOf(entries) {
+  const oldest = [...(entries || [])].reverse()
+  if (!oldest.length) return { best: null, prev: null, latest: null }
+  const kg = r => { const v = parseFloat(r.one_rm_kg); return Number.isFinite(v) ? v : -Infinity }      // a row that is not a number never beats one that is
+  const top = rows => rows.reduce((b, r) => (b === null || kg(r) >= kg(b) ? r : b), null)
+  const best = top(oldest)
+  return { best, prev: top(oldest.slice(0, oldest.indexOf(best))), latest: oldest[oldest.length - 1] }
+}
+
 // One estimated 1RM per logged session, oldest first, from the SAME engine as the runner's Stats sheet and the Lifts cards (_xsSessionMetrics). Sessions that estimate nothing are left out.
 function _pbE1rmPoints(sessions) {
   return [...(sessions || [])]
@@ -195,7 +211,7 @@ async function renderLiftPage() {
   _pbShowPerformance(false)
   el.innerHTML = '<div class="loading-state">Loading this lift…</div>'
   const [bestsR, hist] = await Promise.all([
-    _fetchAllRows(() => db.from('client_1rms').select('*', { count: 'exact' }).eq('client_id', clientId).eq('exercise_name', name).order('recorded_at', { ascending: false }).order('id', { ascending: false })),
+    _fetchAllRows(() => db.from('client_1rms').select('*', { count: 'exact' }).eq('client_id', clientId).eq('exercise_name', name).order('recorded_at', { ascending: false }).order('created_at', { ascending: false, nullsFirst: false }).order('id', { ascending: false })),
     // The logged-sessions read is allowed to fail on its own: the best history above it is a different table and still stands.
     _fetchExerciseSessions(clientId, name).then(sessions => ({ sessions, error: null }), error => ({ sessions: null, error }))
   ])
@@ -208,13 +224,14 @@ async function renderLiftPage() {
   }
   if (hist.error) log.error('renderLiftPage', 'logged sessions fetch failed', hist.error)
   const bests = bestsR.data || []                    // newest first
-  const latest = bests[0], prev = bests[1]
+  const { best, prev, latest } = _pbBestOf(bests)    // best = the highest; latest = the newest, which % sets use
   const unit = escapeHtml(window._unitPrefs.weight)
   const dispNum = kg => parseFloat(Number(weightToPref(kg)).toFixed(1))
 
-  const bestCard = latest
-    ? `<div class="pw-card"><div class="pw-label">Personal best</div><div class="pw-big">${_pbN(parseFloat(latest.one_rm_kg))} <span class="pw-big-unit">${unit}</span></div>
-         <div class="pb-note">Recorded ${_pwFmtDate(latest.recorded_at)}${prev ? ` · was ${_pbW(parseFloat(prev.one_rm_kg))} on ${_pwFmtDate(prev.recorded_at)}${parseFloat(latest.one_rm_kg) > parseFloat(prev.one_rm_kg) ? ` <span class="pw-pill is-good">+${_pbW(parseFloat(latest.one_rm_kg) - parseFloat(prev.one_rm_kg))}</span>` : ''}` : ''}</div></div>`
+  const bestCard = best
+    ? `<div class="pw-card"><div class="pw-label">Personal best</div><div class="pw-big">${_pbN(parseFloat(best.one_rm_kg))} <span class="pw-big-unit">${unit}</span></div>
+         <div class="pb-note">Recorded ${_pwFmtDate(best.recorded_at)}${prev ? ` · was ${_pbW(parseFloat(prev.one_rm_kg))} on ${_pwFmtDate(prev.recorded_at)}${parseFloat(best.one_rm_kg) > parseFloat(prev.one_rm_kg) ? ` <span class="pw-pill is-good">+${_pbW(parseFloat(best.one_rm_kg) - parseFloat(prev.one_rm_kg))}</span>` : ''}` : ''}</div>
+         ${latest !== best ? `<div class="pb-note pb-current">Current 1RM ${_pbW(parseFloat(latest.one_rm_kg))} (${_pwFmtDate(latest.recorded_at)}), used for % of 1RM sets</div>` : ''}</div>`
     : `<div class="pw-card"><div class="pw-label">Personal best</div><div class="pb-note">None recorded yet. Tap Update best to add one.</div></div>`
 
   const histRows = bests.map(b => `<div class="pw-item"><span class="pw-item-date">${_pwFmtDate(b.recorded_at)}</span><strong class="pw-item-w">${_pbW(parseFloat(b.one_rm_kg))}</strong><button type="button" class="pb-del" title="Delete" aria-label="Delete this entry" onclick="delete1RM('${b.id}','${clientId}')">×</button></div>`).join('')
@@ -232,7 +249,7 @@ async function renderLiftPage() {
       : `<div class="pw-card"><div class="pb-note">No weighted sets logged under this exact name yet. Log it in a workout and the best sets appear here.</div></div>`
     const pts = _pbE1rmPoints(hist.sessions)
     if (pts.length) {
-      const est = pts[pts.length - 1].kg, rec = latest ? parseFloat(latest.one_rm_kg) : null
+      const est = pts[pts.length - 1].kg, rec = best ? parseFloat(best.one_rm_kg) : null      // "the recorded best" is the best, not the latest entry
       const gap = rec == null ? 0 : parseFloat(Number(weightToPref(Math.abs(est - rec))).toFixed(1))      // what is read: under a tenth is "agrees"
       const cmp = rec == null ? '' : gap === 0 ? 'Logged sets agree with the recorded best.' : est > rec ? `Logged sets point to ${_pbW(est - rec)} above the recorded best.` : `The recorded best is ${_pbW(rec - est)} above what logged sets estimate.`
       e1Card = `<div class="pw-card pb-card"><div class="pw-card-row"><div><div class="pw-big pb-e1">${_pbN(est)} <span class="pw-big-unit">${unit}</span></div><div class="pb-note" style="margin:2px 0 0">from the latest logged sets</div></div></div><div class="pb-chart"><canvas id="pb-e1rm-chart"></canvas></div>${cmp ? `<div class="pb-note" style="margin:0">${cmp}</div>` : ''}</div>`
@@ -244,14 +261,14 @@ async function renderLiftPage() {
   el.innerHTML = `${back}
     <div class="pw-head"><h3 class="pw-title">${escapeHtml(name)}</h3><button type="button" class="btn-primary pw-log-btn" onclick="updateBest()">Update best</button></div>
     ${bestCard}
-    <div class="pw-group">Best history</div>${histCard}
+    <div class="pw-group">1RM history</div>${histCard}
     <div class="pw-group">Best sets by reps</div>${repsCard}
     <div class="pw-group">Estimated 1RM</div>${e1Card}`
 
   const unitText = window._unitPrefs.weight
   if (bests.length > 1) {
     const asc = [...bests].reverse()
-    _renderMetricChart('pb-hist-chart', { labels: asc.map(b => _pwFmtShort(b.recorded_at)), series: [{ label: `Best (${unitText})`, data: asc.map(b => dispNum(parseFloat(b.one_rm_kg))), colour: _METRIC_COLORS.topWeight, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
+    _renderMetricChart('pb-hist-chart', { labels: asc.map(b => _pwFmtShort(b.recorded_at)), series: [{ label: `1RM (${unitText})`, data: asc.map(b => dispNum(parseFloat(b.one_rm_kg))), colour: _METRIC_COLORS.topWeight, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
   }
   if (!hist.error) {
     const pts = _pbE1rmPoints(hist.sessions)
