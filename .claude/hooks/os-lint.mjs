@@ -21,7 +21,7 @@
  *                                # detector dead if you only match the check name (found 2026-08-22).
  *
  * Every input path is env-overridable (OSLINT_SKILLS, OSLINT_BUGS, OSLINT_LOG, OSLINT_STATUS,
- * OSLINT_MARKER, OSLINT_HOOKS_DIR, OSLINT_SETTINGS, OSLINT_CLAUDE_MD, OSLINT_PREDICTIONS,
+ * OSLINT_MARKER, OSLINT_HOOKS_DIR, OSLINT_SETTINGS, OSLINT_CLAUDE_MD,
  * OSLINT_SELFTEST_MARKER) — that is what makes --self-test possible. Adding a check WITHOUT an
  * override for its input makes it untestable, which is how a check quietly becomes decorative.
  *
@@ -1315,6 +1315,7 @@ function checkJakeReportedPerWeek () {
   for (const r of rows) {
     if (r.malformed || !/^\d{4}-\d{2}-\d{2}$/.test(r.reported || '')) continue
     if (!/reported by jake|jake reported/i.test(r.statusDetail + ' ' + r.action)) continue
+    if (Number.isNaN(Date.parse(r.reported + 'T12:00:00Z'))) continue   // a typo like 2026-13-01 must not crash the session-start run
     const w = monday(r.reported)
     if (w in counts) counts[w]++
   }
