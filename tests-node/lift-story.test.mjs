@@ -20,6 +20,17 @@ test('a lift flat for its last three sessions is stalled; three sessions in all 
   assert.equal(story([L('A', S('2026-10-12', 100), S('2026-10-19', 100), S('2026-10-26', 100))]).stalled.length, 0)
   assert.equal(story([L('A', S('2026-10-05', 100), S('2026-10-12', 100), S('2026-10-19', 105), S('2026-10-26', 100))]).stalled.length, 0)
 })
+// 2026-11-17 (audit backlog #12): "stalled" is about TIME, not a session count. It was "4+ sessions and the last three set no new best", so a lift trained three
+// times a week read as stalled after ONE week without a best. Now: the best of the 6 weeks was reached 3 weeks ago or more, with at least 3 sessions since.
+test('a lift trained three times a week is not stalled after one week without a new best', () => {
+  const r = story([L('A', S('2026-10-27', 100), S('2026-10-29', 105), S('2026-10-31', 110), S('2026-11-03', 105), S('2026-11-05', 108), S('2026-11-07', 107))])
+  assert.equal(r.stalled.length, 0, 'the best (110) was 8 days ago')
+})
+test('three weeks or more since the best, trained three times since: stalled; trained less often than that: too little to say', () => {
+  assert.equal(story([L('A', S('2026-10-01', 100), S('2026-10-08', 110), S('2026-10-15', 105), S('2026-10-22', 108), S('2026-11-05', 109))]).stalled.join(), 'A', 'best 8 Oct, 31 days ago, three sessions since')
+  assert.equal(story([L('A', S('2026-10-01', 100), S('2026-10-08', 110), S('2026-10-29', 105), S('2026-11-05', 108))]).stalled.length, 0, 'only two sessions since the best')
+  assert.equal(story([L('A', S('2026-10-12', 100), S('2026-10-15', 110), S('2026-10-20', 105), S('2026-10-25', 108), S('2026-11-01', 109))]).stalled.join(), 'A', 'best 15 Oct is 24 days ago')
+})
 test('leaves out one-off, old, bodyweight and non-lift sessions', () => {
   const r = story([L('Once', S('2026-11-01', 100)), L('Old', S('2026-01-01', 100), S('2026-02-01', 110)),
     L('BW', { date: '2026-10-12', sets: [{ weight_kg: 0, reps_achieved: 10 }] }, { date: '2026-11-02', sets: [{ weight_kg: null, reps_achieved: 12 }] }),

@@ -3160,17 +3160,23 @@ function _sessionBestE1RM(sets) {
 }
 
 // Over the last `windowDays`: each weight-and-reps lift done at least twice, its first session against its latest (the better of the last two, so one off day does not read as going
-// backwards), best first. Stalled: four or more sessions and the last three set no new best. Pure; dates are YYYY-MM-DD text.
+// backwards), best first. Stalled is about TIME (2026-11-17, audit backlog #12): the best of the window was first reached 21 days ago or more, and the lift
+// has been trained at least 3 times since without beating it. It was "4+ sessions and the last three set no new best", which counted sessions, so a lift
+// trained three times a week read as stalled after one week. Pure; dates are YYYY-MM-DD text. tests-node/lift-story.test.mjs.
+const _STALL_DAYS = 21, _STALL_SESSIONS = 3
 function _liftStory(exercises, todayStr, windowDays = 42) {
   const [y, m, d] = todayStr.split('-').map(Number)
   const from = _ymdLocal(new Date(y, m - 1, d - windowDays))
+  const stallBy = _ymdLocal(new Date(y, m - 1, d - _STALL_DAYS))
   const rows = []
   for (const ex of exercises || []) {
     if (ex.metricType !== 'weight_reps') continue
-    const pts = ex.sessions.filter(s => s.date >= from && s.date <= todayStr).map(s => _sessionBestE1RM(s.sets)).filter(v => v > 0)
+    const pts = ex.sessions.filter(s => s.date >= from && s.date <= todayStr).map(s => ({ date: s.date, v: _sessionBestE1RM(s.sets) })).filter(p => p.v > 0)
     if (pts.length < 2) continue
-    const first = pts[0], latest = Math.max(...pts.slice(-2))
-    rows.push({ name: ex.name, first, latest, pct: (latest - first) / first * 100, stalled: pts.length >= 4 && Math.max(...pts.slice(-3)) <= Math.max(...pts.slice(0, -3)) })
+    const vals = pts.map(p => p.v)
+    const first = vals[0], latest = Math.max(...vals.slice(-2))
+    const top = Math.max(...vals), at = vals.indexOf(top)      // the FIRST session that reached the best: matching it later is not a new best
+    rows.push({ name: ex.name, first, latest, pct: (latest - first) / first * 100, stalled: pts[at].date <= stallBy && pts.length - 1 - at >= _STALL_SESSIONS })
   }
   rows.sort((a, b) => b.pct - a.pct)
   return { rows, up: rows.filter(r => r.pct >= 0.5).length, stalled: rows.filter(r => r.stalled).map(r => r.name) }
