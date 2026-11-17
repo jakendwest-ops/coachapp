@@ -2342,7 +2342,9 @@ async function renderProgressWeight(el) {
     ${_weightGoalCardHtml(parseFloat(latest.weight_kg), parseFloat(effectiveStarting), goalWeightKg, hasBothGoals, !linkedBw)}
     ${_weightTrendHtml(_weightTrend(logs, goalWeightKg, _ymdLocal(new Date())), _ymdLocal(new Date()))}
     ${goalsCard}
-    <div style="position:relative;height:200px;margin-bottom:16px"><canvas id="pw-chart" style="width:100%;height:100%"></canvas></div>
+    <div class="sv-switch" role="group" aria-label="Chart range" style="margin-bottom:8px">${_WEIGHT_RANGES.map(r => `<button type="button" class="sv-pill" data-pw-range="${r}" aria-pressed="false" onclick="_setWeightRange('${r}')">${r}</button>`).join('')}</div>
+    <div id="pw-chart-wrap" style="position:relative;height:200px;margin-bottom:16px"><canvas id="pw-chart" style="width:100%;height:100%"></canvas></div>
+    <p id="pw-chart-empty" class="pb-note" hidden></p>
     ${_weightListHtml(logs, hasBothGoals ? Math.sign(goalWeightKg - effectiveStarting) : 0)}
     ${(() => { const hr = logs.filter(l => l.resting_hr != null); if (hr.length < 2) return ''
       return `<div style="margin-top:20px;margin-bottom:8px;font-size:var(--text-base, 13px);font-weight:600;color:var(--text)">Resting heart rate</div>
@@ -2355,39 +2357,14 @@ async function renderProgressWeight(el) {
   // a weight-gain goal doesn't invert the axis.
   // Convert to the display unit BEFORE the min/max math, so the plotted points and the axis bounds
   // stay in the same unit as each other (converting only the axis label would mismatch them).
-  const weightUnit = window._unitPrefs.weight
-  const dispWeights = logs.map(l => weightToPref(l.weight_kg))
-  const dispGoal = goalWeightKg != null ? weightToPref(goalWeightKg) : null
-  const dispStarting = startingWeightKg != null ? weightToPref(startingWeightKg) : null
-  const anchors = [dispGoal, dispStarting, ...dispWeights].filter(v => v != null)
-  const yRange = (dispGoal != null || dispStarting != null)
-    ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
-    : {}
-  // Chart.js keeps a per-canvas registry; creating a second chart on the same canvas without
-  // destroying the first leaks the old instance along with its listeners and animation loop, and the
-  // two then fight over the same context. The weight-chart site above already guards this exact way
-  // (`Chart.getChart(id)` + destroy) — this pair was simply missed. Re-rendering My Progress is a
-  // normal thing to do repeatedly (switch tab, change units, log a weight), so the leak compounds.
-  // Jake, 2026-08-14: "the entire UI for weight/performance/programs/1RM is better on ALEX TURNER
-  // profile than it is on my personal account." This chart is the specific comparison he made. It had
-  // ONE flat line; the coach's had three datasets, a smoothing average and a body-fat axis — all from
-  // data this page was ALREADY loading and simply not plotting. Same helper, same style, both surfaces.
-  const dispBf = logs.map(l => (l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null))
-  const pwSeries = [
-    { label: `Weight (${weightUnit})`, data: dispWeights, colour: _METRIC_COLORS.topWeight, fill: true },
-    { label: '7-day avg', data: _rollingAvg(dispWeights), colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 },
-  ]
-  if (dispBf.some(v => v != null)) pwSeries.push({
-    label: 'Body fat %', data: dispBf, colour: _METRIC_COLORS.intensity, axis: 'y2', spanGaps: true,
-  })
-  _renderMetricChart('pw-chart', {
-    labels: logs.map(l => _pwFmtShort(l.date)),
-    series: pwSeries,
-    yRange,
-    height: true,   // the canvas sits in a fixed-height box, so aspect ratio must not drive it
-    stepSize: weightUnit === 'lb' ? 1 : 0.5,
-    yFormat: v => `${_tickNum(v)} ${weightUnit}`,
-  })
+  // The chart draws through _drawWeightChart so the range buttons can redraw it without reading anything again. Jake, 2026-08-14: the
+  // Personal chart gets the coach's three series (weight, the average, body fat on a second axis), through the same helper.
+  _weightChartData = { logs, startingWeightKg, goalWeightKg }
+  // Opens on 3M, or on All when 3M would be empty (an account whose weigh-ins are all older); a range picked on this visit is kept across repaints (a save).
+  const today = _ymdLocal(new Date())
+  const inRange = r => { const from = _weightRangeStart(r, today); return logs.filter(l => !from || String(l.date).slice(0, 10) >= from).length }
+  if (!_weightRange) _weightRange = inRange('3M') >= 2 || inRange('All') < 2 ? '3M' : 'All'
+  _drawWeightChart()
 
   const hrLogs = logs.filter(l => l.resting_hr != null)
   if (hrLogs.length >= 2 && document.getElementById('resting-hr-chart')) {
@@ -2399,6 +2376,83 @@ async function renderProgressWeight(el) {
       yFormat: v => `${_tickNum(v)} bpm`,
     })
   }
+}
+
+// ── The Bodyweight chart's range and its 7-day average (Jake approved 2026-11-17; docs/bugs/2026-11-17-weight-7-day-average-is-a-7-entry-average.md) ──
+// The average was _rollingAvg over the last 7 ENTRIES, labelled "7-day avg": for weekly weigh-ins a 7-week average, which ran about 1 kg behind the line.
+// It is now the weigh-ins on each point's day and the 6 days before it. It is worked out over the WHOLE history and then cut to the range, so the first
+// point of a 3M view still averages the days before it. tests-node/weight-average.test.mjs; tests/weight-section-2026-10-13.spec.js.
+const _WEIGHT_RANGES = ['1M', '3M', '6M', '1Y', 'All']
+const _WEIGHT_RANGE_WORDS = { '1M': 'the last month', '3M': 'the last 3 months', '6M': 'the last 6 months', '1Y': 'the last year' }
+let _weightRange = null          // the range picked on this visit; null until the page first draws (then 3M, or All)
+let _weightChartData = null      // { logs (oldest first), startingWeightKg, goalWeightKg } from the last renderProgressWeight
+
+// The first day (YYYY-MM-DD) a range shows, or null for All. The same day counts as _TREND_RANGES does on Lifts: 30 / 90 / 180 / 365 days ending today.
+function _weightRangeStart(range, todayStr) {
+  const days = _TREND_RANGES[range]
+  if (!days || days === Infinity) return null
+  const [y, m, d] = String(todayStr).split('-').map(Number)
+  return _ymdLocal(new Date(y, m - 1, d - (days - 1)))
+}
+
+// points: [{ date: 'YYYY-MM-DD', v }] oldest first -> one average per point: the mean of every usable v dated within `days` days ending on that point's day
+// (its own day included), or null when there is none. Whole days from the date's own parts, so a clock change cannot shift a window. v may be a string
+// (weightToPref returns one in lb): coerced, and anything not finite is left out, never averaged in as NaN.
+function _avgByDays(points, days = 7) {
+  const dayNo = ds => { const [y, m, d] = String(ds).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000 }
+  const pts = (points || []).map(p => ({ x: dayNo(p.date), v: p.v == null || p.v === '' ? NaN : Number(p.v) }))
+  return pts.map(p => {
+    const inW = pts.filter(q => q.x <= p.x && q.x > p.x - days && Number.isFinite(q.v))
+    return inW.length ? parseFloat((inW.reduce((s, q) => s + q.v, 0) / inW.length).toFixed(2)) : null
+  })
+}
+
+function _setWeightRange(range) {
+  if (!_WEIGHT_RANGES.includes(range)) return
+  _weightRange = range
+  _drawWeightChart()
+}
+
+// Draws (or clears) #pw-chart for the chosen range from _weightChartData. Under two weigh-ins in the range: no chart, a sentence saying so, and the old
+// chart destroyed, never left on screen under the new button.
+function _drawWeightChart() {
+  const data = _weightChartData, wrap = document.getElementById('pw-chart-wrap'), empty = document.getElementById('pw-chart-empty')
+  if (!data || !wrap || !empty) return
+  document.querySelectorAll('[data-pw-range]').forEach(b => b.setAttribute('aria-pressed', String(b.getAttribute('data-pw-range') === _weightRange)))
+  const old = Chart.getChart('pw-chart')
+  if (old) { old.destroy(); _activeCharts = _activeCharts.filter(c => c !== old) }      // by the chart: destroy() clears its canvas
+  const weightUnit = window._unitPrefs.weight
+  const all = data.logs
+  const avgAll = _avgByDays(all.map(l => ({ date: l.date, v: weightToPref(l.weight_kg) })), 7)
+  const from = _weightRangeStart(_weightRange, _ymdLocal(new Date()))
+  const idx = all.map((l, i) => i).filter(i => !from || String(all[i].date).slice(0, 10) >= from)
+  wrap.hidden = idx.length < 2
+  empty.hidden = idx.length >= 2
+  if (idx.length < 2) { empty.textContent = `Fewer than 2 weigh-ins in ${_WEIGHT_RANGE_WORDS[_weightRange] || 'this range'}. Pick a longer range to see the chart.`; return }
+  const logs = idx.map(i => all[i])
+  // Converted to the display unit BEFORE the axis maths, so the points and the bounds are in one unit. The axis blends the start and goal weights
+  // with the weigh-ins shown (Math.min/max, so a gain goal does not invert it).
+  const dispWeights = logs.map(l => weightToPref(l.weight_kg))
+  const dispGoal = data.goalWeightKg != null ? weightToPref(data.goalWeightKg) : null
+  const dispStarting = data.startingWeightKg != null ? weightToPref(data.startingWeightKg) : null
+  const anchors = [dispGoal, dispStarting, ...dispWeights].map(v => (v == null ? null : Number(v))).filter(v => v != null && Number.isFinite(v))
+  const yRange = (dispGoal != null || dispStarting != null)
+    ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
+    : {}
+  const dispBf = logs.map(l => (l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null))
+  const pwSeries = [
+    { label: `Weight (${weightUnit})`, data: dispWeights, colour: _METRIC_COLORS.topWeight, fill: true },
+    { label: '7-day avg', data: idx.map(i => avgAll[i]), colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 },
+  ]
+  if (dispBf.some(v => v != null)) pwSeries.push({ label: 'Body fat %', data: dispBf, colour: _METRIC_COLORS.intensity, axis: 'y2', spanGaps: true })
+  _renderMetricChart('pw-chart', {
+    labels: logs.map(l => _pwFmtShort(l.date)),
+    series: pwSeries,
+    yRange,
+    height: true,   // the canvas sits in a fixed-height box, so aspect ratio must not drive it
+    stepSize: weightUnit === 'lb' ? 1 : 0.5,
+    yFormat: v => `${_tickNum(v)} ${weightUnit}`,
+  })
 }
 
 // ── ③ metric_type-aware progress trends ─────────────────────────────────────────────────────────

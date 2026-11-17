@@ -409,7 +409,11 @@ test.describe('solo dashboard cards', () => {
       // card's chart BEFORE replacing the host's HTML; _xsDraw then draws into the fresh canvas. A blanket destroy here would kill the
       // charts of every OTHER exercise card on the My progress page each time one card's measure pill is tapped. The full-list
       // render that does rebuild the whole page (_renderPerfExerciseList) calls _destroyManagedCharts() itself.
-      _xsDraw: true
+      _xsDraw: true,
+      // The Bodyweight chart's range buttons (2026-11-17). A range tap redraws into #pw-chart, which PERSISTS (nothing is rebuilt), and it destroys the chart
+      // on that canvas itself first (Chart.getChart('pw-chart').destroy(), filtered out of the registry by the chart). The page render that DOES rebuild the
+      // subtree, renderProgressWeight, calls _destroyManagedCharts() before it calls this. A blanket destroy here would take out the resting-HR chart beside it.
+      _drawWeightChart: true
     }
 
     lines.forEach((l, i) => {

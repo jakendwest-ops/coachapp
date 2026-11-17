@@ -1351,7 +1351,8 @@ async function _dashRenderOwn(el, role) {
       labels: series.map(w => _dashFormatDate(w.date)),
       series: [
         { label: 'Weight', data: vals, colour: _METRIC_COLORS.topWeight, fill: true },
-        { label: '7-day avg', data: _rollingAvg(vals, 7), colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 }
+        // 7 DAYS of weigh-ins, not the last 7 entries (docs/bugs/2026-11-17-weight-7-day-average-is-a-7-entry-average.md): _avgByDays, as the Bodyweight chart.
+        { label: '7-day avg', data: _avgByDays(series.map((w, i) => ({ date: w.date, v: vals[i] })), 7), colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 }
       ],
       legend: false,
       height: 70,

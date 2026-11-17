@@ -212,6 +212,34 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
     expect(r.inserted).toBe(0)
   })
 
+  // docs/bugs/2026-11-17-weight-7-day-average-is-a-7-entry-average.md: the average is over 7 DAYS of weigh-ins, and the chart has a range (Jake, 2026-11-17).
+  test('the chart opens on 3M with a real 7-day average; 1M with under two weigh-ins says so; All shows every weigh-in', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-17T12:00:00Z'))
+    await soloView(page)
+    await show(page)
+    const pressed = host(page).locator('[data-pw-range][aria-pressed="true"]')
+    await expect(pressed).toHaveText('3M')
+    const data = () => page.evaluate(() => { const c = Chart.getChart('pw-chart'); return c ? c.data.datasets.slice(0, 2).map(d => d.data.map(Number)) : null })
+    // 3M = 20 Aug to 17 Nov: the six weigh-ins from 25 Aug. Each average is the weigh-ins on that day and the 6 days before it.
+    expect(await data()).toEqual([[106.8, 107.3, 105.2, 108, 109.7, 110.3], [106.8, 107.3, 106.25, 108, 109.7, 110]])
+    await host(page).locator('[data-pw-range="1M"]').click()
+    await expect(pressed).toHaveText('1M')
+    await expect(host(page).locator('#pw-chart-empty')).toHaveText('Fewer than 2 weigh-ins in the last month. Pick a longer range to see the chart.')
+    await expect(host(page).locator('#pw-chart-wrap')).toBeHidden()
+    expect(await data(), 'no chart is left on screen from the range before').toBeNull()
+    await host(page).locator('[data-pw-range="All"]').click()
+    await expect(host(page).locator('#pw-chart-empty')).toBeHidden()
+    expect((await data())[0].length, 'All: every weigh-in').toBe(9)
+  })
+
+  test('when the last 3 months hold under two weigh-ins the chart opens on All instead of an empty range', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-17T12:00:00Z'))
+    await soloView(page)
+    await show(page, { logs: [row('2026-02-01', 90), row('2026-03-01', 89)] })
+    await expect(host(page).locator('[data-pw-range][aria-pressed="true"]')).toHaveText('All')
+    await expect(host(page).locator('#pw-chart-empty')).toBeHidden()
+  })
+
   test('with no entries yet the page says so, and the log button and sheet are still there', async ({ page }) => {
     await soloView(page)
     await show(page, { logs: [] })

@@ -55,6 +55,7 @@ test.describe('weight history, personal bests and the data export past the 200-r
         if (solo) { currentProfile.role = 'solo'; window._soloClientId = 'cid' }
         try {
           const el = document.createElement('div'); document.body.appendChild(el)
+          _weightRange = 'All'      // the chart opens on 3M since 2026-11-17; this test is about EVERY weigh-in being read, so it looks at All
           await renderProgressWeight(el)
           const leaf = (label) => [...el.querySelectorAll('div')].find(d => d.children.length === 0 && d.textContent.trim() === label)
           const chart = Chart.getChart('pw-chart')
