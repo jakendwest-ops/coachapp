@@ -460,6 +460,30 @@ async function _dashBlockWeights(b) {
   return `Body weight ${fmtWeight(a.weight_kg, { spaced: true })} → ${fmtWeight(z.weight_kg, { spaced: true })}`
 }
 
+// ─── The strength card on Personal view's Today (Jake approved 2026-11-17): the Lifts tab's strength card, opening on 3 months ───────────
+// The slot is drawn hidden with the page; _dashFillStrength reads the whole exercise history AFTER the page has drawn (Today does not load it), so Today is not
+// slower to appear. A failed read or nothing to compare leaves it hidden: no card, never an empty one. Token-guarded like the block card, because Today
+// repaints on every write and a stale answer must not touch a newer page.
+let _dashStrengthToken = 0
+const _dashStrengthSlotHtml = () => '<section class="dash-card" id="dash-strength" data-strength-card hidden></section>'
+async function _dashFillStrength(root, clientId) {
+  const tok = ++_dashStrengthToken
+  let series = null
+  try { series = await _buildExerciseSeries(clientId) } catch (e) { log.warn('_dashFillStrength', 'exercise history unavailable', { code: e?.code }) }
+  const card = tok === _dashStrengthToken ? root.querySelector('#dash-strength') : null
+  const today = _ymdLocal(new Date())
+  if (!card || !series || !_strengthHasAny(series, today)) return
+  card._strength = { exercises: series, today, view: '3m', dash: true }
+  card.innerHTML = _strengthCardInner(series, today, '3m', true)
+  card.hidden = false
+}
+// "See all lifts": Progress, Performance, Lifts.
+function _dashOpenLifts() {
+  const w = /** @type {any} */ (window)
+  w._progressTab = 'Performance'; w._perfTab = 'Lifts'
+  navigate('progress')
+}
+
 // Fills the card's lifts and body weight AFTER the page has drawn: they need the whole exercise history, which Today does not load. _blockReviewWindows freezes the block to
 // the plan's last Sunday, and the review page reads the same two windows through the same function, so the card and the table cannot disagree. Token-guarded: Today repaints
 // on every write, and a stale answer must not touch a newer card.
@@ -1332,6 +1356,7 @@ async function _dashRenderOwn(el, role) {
       ${heroFor(null)}
       ${isSudo ? '' : _dashMissedHtml(days, clientId)}
       ${weekFor(null)}
+      ${isClient ? '' : _dashStrengthSlotHtml()}
       ${_dashTilesHtml(streak, program, !isClient, !isSudo)}
       ${_dashWeightHtml(d.weights, isClient ? null : clientId)}
       ${isClient ? _dashCalendarHtml(d.upcoming, todayStr) : ''}
@@ -1341,6 +1366,7 @@ async function _dashRenderOwn(el, role) {
   const root = el.querySelector('#dash-root')
   if (root) root._dash = { todayStr, sel: null, hero: heroFor, week: weekFor, block, view, range }
   if (root && block && block.state === 'ended') _dashFillBlockCard(root, block)
+  if (root && !isClient) _dashFillStrength(root, clientId)
 
   // After innerHTML, so the canvas exists. Oldest-first for a left-to-right time axis, and the 7-day rolling average via the
   // existing helper rather than a second implementation.

@@ -3144,16 +3144,82 @@ function _liftStory(exercises, todayStr, windowDays = 42) {
   return { rows, up: rows.filter(r => r.pct >= 0.5).length, stalled: rows.filter(r => r.stalled).map(r => r.name) }
 }
 
+const _strengthPct = v => (v > 0 ? '+' : '') + Number(v.toFixed(1)) + '%'
+const _liftsWord = n => `${n} ${n === 1 ? 'lift' : 'lifts'}`
+
+// The 6-week view's title, line and rows (no card around them), or '' when no lift was done twice in the window.
 function _liftStoryHtml(story) {
   if (!story.rows.length) return ''
-  const n = story.rows.length
-  const pct = v => (v > 0 ? '+' : '') + Number(v.toFixed(1)) + '%'
-  return `<div class="pw-card" id="perf-story">
-      <div class="pw-label">Last 6 weeks</div>
-      <div class="pw-card-title">Stronger on ${story.up} of ${n} ${n === 1 ? 'lift' : 'lifts'}</div>
-      <div class="pw-card-sub">Estimated 1RM: your first session against your latest.${story.stalled.length ? ' ' + story.stalled.length + ' stalled.' : ''}</div>
-      <div class="pw-list">${story.rows.slice(0, 8).map(r => `<div class="pb-row pb-row-static"><span class="pb-row-main"><span class="pb-name">${escapeHtml(r.name)}</span><span class="pb-sub">${fmtWeight(Math.round(r.first))} → ${fmtWeight(Math.round(r.latest))}</span></span>${r.stalled ? '<span class="pw-pill">Stalled</span>' : `<span class="pw-pill${r.pct > 0 ? ' is-good' : ''}">${pct(r.pct)}</span>`}</div>`).join('')}</div>
-    </div>`
+  return `<div class="pw-card-title">Stronger on ${story.up} of ${_liftsWord(story.rows.length)}</div>
+      <div class="pw-card-sub">Estimated 1RM, last 6 weeks: your first session against your latest.${story.stalled.length ? ' ' + story.stalled.length + ' stalled.' : ''}</div>
+      <div class="pw-list">${story.rows.slice(0, 8).map(r => `<div class="pb-row pb-row-static"><span class="pb-row-main"><span class="pb-name">${escapeHtml(r.name)}</span><span class="pb-sub">${fmtWeight(Math.round(r.first))} → ${fmtWeight(Math.round(r.latest))}</span></span>${r.stalled ? '<span class="pw-pill">Stalled</span>' : `<span class="pw-pill${r.pct > 0 ? ' is-good' : ''}">${_strengthPct(r.pct)}</span>`}</div>`).join('')}</div>`
+}
+
+// ─── The strength overview (Jake approved 2026-11-17; audit backlog #4): "how much stronger than 3 / 12 months ago?" ───────────
+// Each weight-and-reps lift's BEST estimated 1RM in the last 4 weeks against its best in the 4 weeks that ended `monthsBack` calendar months ago (a month-end
+// today counts back to the shorter month's last day). A best over 4 weeks, so one off day or one missed week does not decide it. A lift in only one window gets
+// no change: it is counted as notLately (then only) or newSince (now only). Same estimate as everywhere else (_sessionBestE1RM: warm-ups out, RPE counted).
+// Pure; dates are YYYY-MM-DD text. tests-node/strength-compare.test.mjs.
+function _strengthCompare(exercises, todayStr, monthsBack, windowDays = 28) {
+  const [y, m, d] = String(todayStr).split('-').map(Number)
+  const lastDay = (yy, mm) => new Date(yy, mm + 1, 0).getDate()      // mm 0-based
+  const tm = new Date(y, m - 1 - monthsBack, 1)
+  const thenTo = _ymdLocal(new Date(tm.getFullYear(), tm.getMonth(), Math.min(d, lastDay(tm.getFullYear(), tm.getMonth()))))
+  const back = ymd => { const [a, b, c] = ymd.split('-').map(Number); return _ymdLocal(new Date(a, b - 1, c - (windowDays - 1))) }
+  const then = { from: back(thenTo), to: thenTo }, now = { from: back(todayStr), to: todayStr }
+  const best = (ex, w) => {
+    const v = ex.sessions.filter(s => s.date >= w.from && s.date <= w.to).map(s => _sessionBestE1RM(s.sets)).filter(x => x > 0)
+    return v.length ? Math.max(...v) : null
+  }
+  const rows = []
+  let notLately = 0, newSince = 0
+  for (const ex of exercises || []) {
+    if (ex.metricType !== 'weight_reps') continue
+    const a = best(ex, then), b = best(ex, now)
+    if (a != null && b != null) rows.push({ name: ex.name, then: a, now: b, pct: (b - a) / a * 100 })
+    else if (a != null) notLately++
+    else if (b != null) newSince++
+  }
+  rows.sort((p, q) => q.pct - p.pct)
+  return { rows, up: rows.filter(r => r.pct >= 0.5).length, notLately, newSince, then, now }
+}
+
+const _STRENGTH_VIEWS = [['6w', '6 weeks', 0], ['3m', '3 months', 3], ['1y', '1 year', 12]]
+
+// One view's title, line, rows and footnote, or '' when the view has nothing to say at all.
+function _strengthViewHtml(exercises, todayStr, view) {
+  const def = _STRENGTH_VIEWS.find(v => v[0] === view) || _STRENGTH_VIEWS[0]
+  if (!def[2]) return _liftStoryHtml(_liftStory(exercises, todayStr))
+  const c = _strengthCompare(exercises, todayStr, def[2])
+  if (!c.rows.length && !c.notLately && !c.newSince) return ''
+  const foot = [c.notLately ? `${c.notLately} not trained lately` : '', c.newSince ? `${c.newSince} new since then` : ''].filter(Boolean).join(' · ')
+  return (c.rows.length
+    ? `<div class="pw-card-title">Stronger on ${c.up} of ${_liftsWord(c.rows.length)}</div>
+      <div class="pw-card-sub">Best estimated 1RM, last 4 weeks against the 4 weeks to ${_pwFmtShort(c.then.to)}.</div>
+      <div class="pw-list">${c.rows.slice(0, 8).map(r => `<div class="pb-row pb-row-static"><span class="pb-row-main"><span class="pb-name">${escapeHtml(r.name)}</span><span class="pb-sub">${fmtWeight(Math.round(r.then))} → ${fmtWeight(Math.round(r.now))}</span></span><span class="pw-pill${r.pct >= 0.5 ? ' is-good' : ''}">${_strengthPct(r.pct)}</span></div>`).join('')}</div>`
+    : `<div class="pw-card-title">No lift to compare over ${def[1]} yet</div>
+      <div class="pw-card-sub">A lift needs a session in the last 4 weeks and in the 4 weeks to ${_pwFmtShort(c.then.to)}.</div>`)
+    + (foot ? `<div class="pb-note" data-strength-foot>${foot}</div>` : '')
+}
+
+// True when any view has something to show: with nothing anywhere, no card is drawn at all.
+const _strengthHasAny = (exercises, todayStr) => _STRENGTH_VIEWS.some(([v]) => _strengthViewHtml(exercises, todayStr, v) !== '')
+
+// The inside of a strength card: the label, the three pills and the chosen view. `dash` adds the Today card's link to the Lifts tab.
+function _strengthCardInner(exercises, todayStr, view, dash = false) {
+  const def = _STRENGTH_VIEWS.find(v => v[0] === view) || _STRENGTH_VIEWS[0]
+  const pills = `<div class="sv-switch" role="group" aria-label="Compare over" style="margin:6px 0 10px">${_STRENGTH_VIEWS.map(([v, label]) => `<button type="button" class="sv-pill" data-strength-view="${v}" aria-pressed="${v === def[0]}" onclick="_setStrengthView(this,'${v}')">${label}</button>`).join('')}</div>`
+  const body = _strengthViewHtml(exercises, todayStr, def[0]) || `<div class="pw-card-title">No lift to compare over ${def[1]} yet</div>`
+  const link = dash ? '<button type="button" class="dash-link" data-strength-all onclick="_dashOpenLifts()">See all lifts</button>' : ''
+  return `<div class="pw-label">Strength</div>${pills}${body}${link}`
+}
+
+// A pill on either card: repaint that card only, from the history it was drawn with.
+function _setStrengthView(btn, view) {
+  const host = btn.closest('[data-strength-card]'), st = host && host._strength
+  if (!st) return
+  st.view = view
+  host.innerHTML = _strengthCardInner(st.exercises, st.today, view, st.dash)
 }
 
 async function renderProgressStrength(el) {
@@ -3168,11 +3234,14 @@ async function renderProgressStrength(el) {
   window._trendCache = exercises
   window._trendState = window._trendState || { range: 'All', metricByEx: {} }
   // The 1M–All range selector moved to renderPerformance's toolbar (a <select>) — P1, 2026-09-07.
+  const today = _ymdLocal(new Date())
   el.innerHTML = `
-    ${_liftStoryHtml(_liftStory(exercises, _ymdLocal(new Date())))}
+    ${_strengthHasAny(exercises, today) ? `<div class="pw-card" id="perf-story" data-strength-card>${_strengthCardInner(exercises, today, '6w')}</div>` : ''}
     <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
     <div class="pf-bar"><span class="pf-count" id="pf-count"></span><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
     <div id="perf-ex-list"></div>`
+  const story = el.querySelector('#perf-story')
+  if (story) story._strength = { exercises, today, view: '6w', dash: false }      // what the pills repaint from
   _renderPerfExerciseList('')
 }
 

@@ -21,6 +21,66 @@ test('Performance opens on the story, ranked, with stalls named and names escape
   expect([r.imgs, r.x]).toEqual([0, false])
 })
 
+// The strength overview (2026-11-17): the story card gains 3 months and 1 year, each the best estimated 1RM in the last 4 weeks against the 4 weeks that ended then.
+const STRENGTH_LIFTS = () => {
+  const d = n => { const x = new Date(); x.setDate(x.getDate() - n); return _ymdLocal(x) }
+  const ago = (months, back) => { const t = new Date(); const x = new Date(t.getFullYear(), t.getMonth() - months, Math.min(t.getDate(), 28)); x.setDate(x.getDate() - back); return _ymdLocal(x) }
+  const S = (date, kg) => ({ date, sets: [{ weight_kg: kg, reps_achieved: 5 }] })
+  return [
+    { name: 'Squat', metricType: 'weight_reps', sessions: [S(ago(3, 5), 100), S(d(30), 105), S(d(3), 110)] },
+    { name: 'Front Squat', metricType: 'weight_reps', sessions: [S(ago(3, 6), 80)] },
+    { name: 'Hip Thrust', metricType: 'weight_reps', sessions: [S(d(5), 120)] }]
+}
+
+test('the strength card on Lifts: 6 weeks as before, then 3 months compares the last 4 weeks with the 4 weeks that ended 3 months ago', async ({ page }) => {
+  await soloReady(page)
+  const r = await page.evaluate(async (src) => {
+    const real = _buildExerciseSeries, el = document.createElement('div'); document.body.appendChild(el)
+    _buildExerciseSeries = async () => (0, eval)('(' + src + ')')()
+    await renderProgressStrength(el)
+    const card = () => el.querySelector('#perf-story')
+    const pressed = () => card().querySelector('[data-strength-view][aria-pressed="true"]').textContent
+    const out = { first: pressed(), sixWeeks: card().textContent }
+    card().querySelector('[data-strength-view="3m"]').click()
+    out.second = pressed(); out.threeMonths = card().textContent
+    out.rows = [...card().querySelectorAll('.pb-name')].map(n => n.textContent)
+    _buildExerciseSeries = real; el.remove()
+    return out
+  }, STRENGTH_LIFTS.toString())
+  expect(r.first).toBe('6 weeks')
+  expect(r.sixWeeks).toContain('Stronger on 1 of 1 lift')
+  expect(r.second).toBe('3 months')
+  expect(r.threeMonths).toContain('Stronger on 1 of 1 lift')
+  expect(r.threeMonths).toContain('+10%')
+  expect(r.rows, 'a lift in one window only gets no row').toEqual(['Squat'])
+  expect(r.threeMonths).toContain('1 not trained lately')
+  expect(r.threeMonths).toContain('1 new since then')
+})
+
+test('the Today card fills after the page draws, opens on 3 months, and stays hidden when the history cannot be read or holds nothing to compare', async ({ page }) => {
+  await soloReady(page)
+  const r = await page.evaluate(async (src) => {
+    const real = _buildExerciseSeries
+    const run = async series => {
+      const root = document.createElement('div'); root.innerHTML = _dashStrengthSlotHtml(); document.body.appendChild(root)
+      _buildExerciseSeries = async () => series
+      await _dashFillStrength(root, 'cid')
+      const card = root.querySelector('#dash-strength')
+      const out = { hidden: card.hidden, text: card.textContent, pressed: card.querySelector('[data-strength-view][aria-pressed="true"]')?.textContent || null, link: !!card.querySelector('[data-strength-all]') }
+      root.remove(); return out
+    }
+    const out = { ok: await run((0, eval)('(' + src + ')')()), failed: await run(null), empty: await run([]) }
+    _buildExerciseSeries = real
+    return out
+  }, STRENGTH_LIFTS.toString())
+  expect(r.ok.hidden).toBe(false)
+  expect(r.ok.pressed).toBe('3 months')
+  expect(r.ok.text).toContain('Stronger on 1 of 1 lift')
+  expect(r.ok.link, 'a way to the Lifts tab').toBe(true)
+  expect(r.failed.hidden, 'MIRROR: a failed read draws nothing rather than an empty card').toBe(true)
+  expect(r.empty.hidden, 'MIRROR: no lifts, no card').toBe(true)
+})
+
 test('MIRROR: nothing to compare draws no card', async ({ page }) => {
   await soloReady(page)
   expect(await page.evaluate(() => _liftStoryHtml({ rows: [], up: 0, stalled: [] }))).toBe('')

@@ -66,7 +66,8 @@ for (const c of CASES) {
       const out = await page.evaluate(async () => {
         const seen = []
         const real = window.__realFrom = window.__realFrom || db.from.bind(db)
-        const empty = () => { const o = { select: () => o, eq: () => o, then: (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) }; return o }      // the stored-1RM read the runner makes when it starts
+        // .order: the runner's read is ordered by date since 2026-11-17 (newest 1RM per lift, docs/bugs/2026-11-17-runner-reads-saved-1rms-in-no-order.md)
+        const empty = () => { const o = { select: () => o, eq: () => o, order: () => o, then: (res, rej) => Promise.resolve({ data: [], error: null }).then(res, rej) }; return o }      // the stored-1RM read the runner makes when it starts
         db.from = t => t === 'client_1rms'
           ? { select: empty, insert: p => { seen.push({ via: window.__via, rows: [].concat(p).map(r => r.recorded_at) }); return Promise.resolve({ data: null, error: null }) } }
           : real(t)
