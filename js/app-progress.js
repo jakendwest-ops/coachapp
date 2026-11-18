@@ -3467,7 +3467,8 @@ function _chartTheme() {
 // not like the next day; the axis ticks and the tooltip title read as dates. Points become { x: day number, y }. Without it, the axis is the evenly spaced
 // category axis every other chart keeps. Day numbers come from the date's own parts (UTC), so a clock change cannot move a point.
 const _chartDayNo = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000 }
-const _chartDayLabel = x => new Date(Math.round(x) * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+// The day number's own date (UTC parts), worded by the file's one short-date formatter (_pwFmtShort: "23 Oct"), not another toLocaleDateString shape.
+const _chartDayLabel = x => { const d = new Date(Math.round(x) * 86400000), p = n => String(n).padStart(2, '0'); return _pwFmtShort(`${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`) }
 /** @param {string|HTMLCanvasElement} target @param {Record<string, any>} [opts] */
 function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange, legend, height, tooltipUnit, stepSize, selectedIndex, onPick, tooltipLabel, dates } = {}) {
   const el = typeof target === 'string' ? document.getElementById(target) : target
