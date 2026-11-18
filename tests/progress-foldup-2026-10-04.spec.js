@@ -268,6 +268,18 @@ test.describe('My progress: fold-up exercise cards (2026-10-04)', () => {
     expect(await names()).toEqual(['Lay A', 'Row 2k', 'Lay B', 'Lay C'])
   })
 
+  // 2026-11-18 (audit backlog #5, second part): a lift card's chart spaces sessions by DATE, like Bodyweight. Lay B was done on 2 and 9 Sept, Lay A weekly.
+  test('an opened lift\'s chart places each session by its date', async ({ page }) => {
+    await showMyProgress(page)
+    await head(page, 'Lay A').click()
+    await expect(page.locator('#pf-host [data-pf-card="0"] canvas')).toBeVisible()
+    const r = await page.evaluate(() => {
+      const c = Chart.getChart(document.querySelector('#pf-host [data-pf-card="0"] canvas')), xs = c.data.datasets[0].data.map(p => p.x)
+      return { type: c.options.scales.x.type, gaps: xs.slice(1).map((x, i) => x - xs[i]), labels: c.data.labels.length }
+    })
+    expect(r).toEqual({ type: 'linear', gaps: [7, 7, 7, 7], labels: 5 })
+  })
+
   test('an opened lift\'s chart has its unit on the axis', async ({ page }) => {
     await showMyProgress(page)
     await head(page, 'Lay A').click()

@@ -80,7 +80,8 @@ const SESSIONS = DATES.map((date, k) => k === 7
 
 const chartState = (page) => page.evaluate(() => {
   const c = Chart.getChart(document.getElementById('rs-chart'))
-  return c ? { labels: c.data.labels.slice(), sets: c.data.datasets.map(d => d.data.slice()) } : null
+  // A point is { x: day, y } since the chart is spaced by date (2026-11-18): the values are the y's.
+  return c ? { labels: c.data.labels.slice(), sets: c.data.datasets.map(d => d.data.map(p => (p && typeof p === 'object' ? p.y : p))) } : null
 })
 // Counts the charts of the sheet, not of the page behind it: a client with weigh-ins has a sparkline on the dashboard (#dash-root).
 const chartCount = (page) => page.evaluate(() => (typeof Chart === 'undefined' ? -1 : Object.values(Chart.instances).filter(c => !c.canvas.closest('#dash-root')).length))

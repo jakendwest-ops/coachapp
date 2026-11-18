@@ -102,7 +102,8 @@ const readCard = (page, selector) => page.evaluate((sel) => {
 
 const chartOf = (page, id) => page.evaluate((id) => {
   const c = Chart.getChart(document.getElementById(id))
-  return c ? { labels: c.data.labels.slice(), sets: c.data.datasets.map(d => d.data.slice()), dashed: c.data.datasets.map(d => !!d.borderDash) } : null
+  // A point is { x: day, y } since the chart is spaced by date (2026-11-18): the values are the y's.
+  return c ? { labels: c.data.labels.slice(), sets: c.data.datasets.map(d => d.data.map(p => (p && typeof p === 'object' ? p.y : p))), dashed: c.data.datasets.map(d => !!d.borderDash) } : null
 }, id)
 // Counts the charts of the card under test, not the page behind it: a client with weigh-ins has a sparkline on the dashboard (#dash-root)
 // that sits behind the runner and the scratch container alike. (Found 2026-10-04, when the test account's weigh-ins were re-seeded and

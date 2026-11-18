@@ -3488,7 +3488,7 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
   const chart = new Chart(el.getContext('2d'), {
     type: 'line',
     data: {
-      labels: xs ? [] : (labels || []),
+      labels: labels || [],      // kept with `dates` too: a linear axis ignores them, and the runner's sheet and its specs still read them
       datasets: series.map(s => {
         const colour = s.colour || t.accent
         const baseR = s.pointRadius != null ? s.pointRadius : 3
@@ -3496,6 +3496,8 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
         return {
           label: s.label || '',
           data: xs ? (s.data || []).map((y, i) => ({ x: xs[i], y })) : s.data,
+          // By date the axis ends exactly at the first and last point, so a large end marker (the Best / selected ring) would be cut in half at the edge.
+          ...(xs ? { clip: false } : {}),
           borderColor: colour,
           // Alpha suffix on a hex, matching the palette's existing convention.
           backgroundColor: s.fill ? (colour.length === 7 ? colour + '18' : colour) : 'transparent',
@@ -3989,6 +3991,8 @@ function _xsDraw(host, key) {
   }
   return _renderMetricChart(canvas, {
     labels, series, height: true, legend: false,
+    // Spaced by date (2026-11-18, audit backlog #5), as Bodyweight is; the runner's in-progress "Today" point sits on today's date.
+    dates: hist.map(s => s.date).concat(today ? [_ymdLocal(new Date())] : []),
     yFormat: v => `${_tickNum(v)} ${M.unit()}`,      // the unit on the axis (2026-11-17): the ticks were bare numbers
     selectedIndex: () => _xsSelIndex(st),
     onPick: i => { const s = st.plotted[i]; if (s) { st.sel = s.key; _xsRefreshSel(host) } },

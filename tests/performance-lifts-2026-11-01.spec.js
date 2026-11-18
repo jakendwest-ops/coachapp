@@ -32,7 +32,8 @@ async function showLifts(page) {
   await installCappedApi(page, { workout_log_exercises: WORLD })
   await page.evaluate(async (me) => {
     window._getCurrentClientId = async () => me
-    window._trendState = { range: 'All', metricByEx: {} }
+    // A to Z: the card indexes below are by name. The list opens on most recently trained since 2026-11-17 (tests/progress-foldup-2026-10-04.spec.js).
+    window._trendState = { range: 'All', metricByEx: {}, sort: 'az' }
     document.getElementById('pl-host')?.remove()
     const el = document.createElement('div'); el.id = 'pl-host'; el.className = 'main-content'; document.body.appendChild(el)
     await renderProgressStrength(el)
@@ -91,7 +92,9 @@ test.describe('Performance > Lifts: the chart says what it shows (2026-11-01)', 
     await open(page, 1)
     const marked = await page.evaluate(() => {
       const c = Object.values(Chart.instances).find(ch => ch.canvas.closest('#pl-host'))
-      const best = c.data.datasets.find(d => d.label === 'Best')
+      const found = c.data.datasets.find(d => d.label === 'Best')
+      // A point is { x: day, y } since the chart is spaced by date (2026-11-18): the values are the y's.
+      const best = found && { data: found.data.map(p => (p && typeof p === 'object' ? p.y : p)) }
       return { has: !!best, at: best ? best.data.findIndex(v => v != null) : -1, value: best ? best.data.find(v => v != null) : null, n: best ? best.data.filter(v => v != null).length : 0 }
     })
     expect(marked, 'exactly one best point, on the second session (100 kg)').toEqual({ has: true, at: 1, value: 100, n: 1 })
@@ -104,7 +107,7 @@ test.describe('Performance > Lifts: the chart says what it shows (2026-11-01)', 
     await open(page, 0)   // Lay A: the newest session is the best AND the selected one
     const r = await page.evaluate(() => {
       const c = Object.values(Chart.instances).find(ch => ch.canvas.closest('#pl-host'))
-      const best = c.data.datasets.findIndex(d => d.label === 'Best'), at = c.data.datasets[best].data.findIndex(v => v != null)
+      const best = c.data.datasets.findIndex(d => d.label === 'Best'), at = c.data.datasets[best].data.findIndex(v => v != null && (typeof v !== 'object' || v.y != null))      // { x, y } points since 2026-11-18
       const el = c.getDatasetMeta(best).data[at]
       return { radius: el.options.radius, hover: el.options.hoverRadius, line: c.getDatasetMeta(0).data[0].options.radius }
     })
