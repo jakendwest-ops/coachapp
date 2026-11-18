@@ -2097,8 +2097,7 @@ function setTsEffort(i, type, containerId) {
   flushTemplateSets(containerId)
   window._templateSets[i].effortType = type
   // In the grouped view the scale belongs to the whole group: copy it on, or the sets differ and the editor falls back to per-set cards.
-  const host = document.getElementById(containerId)
-  if (host?.dataset.tsView === 'uniform') _tsPropagate(window._templateSets, host.dataset.tsTop === '1')
+  _sfKeepGroup(containerId)
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
@@ -2476,7 +2475,15 @@ function sfSetRange(key, i, on, containerId) {
   const [a, b] = _SF_FIELDS[key]
   if (s && !on) s[b] = s[a]
   if (s && on && !_hasNumVal(s[b])) s[b] = s[a]
+  _sfKeepGroup(containerId)
   _tsRerender(containerId)
+}
+
+// In the "same for every set" view only the group's first set is drawn, so a handler that changes that one set must copy the change on
+// to the rest of the group (as setTsEffort does), or the sets stop matching and the redraw jumps to "Each set different" (Jake, 2026-11-17).
+function _sfKeepGroup(containerId) {
+  const host = document.getElementById(containerId)
+  if (host?.dataset.tsView === 'uniform') _tsPropagate(_sfWin._templateSets, host.dataset.tsTop === '1')
 }
 
 // A range end was TYPED: the typed value stays and the other end moves to match it (Jake's range rule, my call on how). In place, no
@@ -2505,6 +2512,7 @@ function sfRestStep(i, end, delta, containerId) {
   if (!range) { s.restMin = txt; s.restMax = txt }
   else if (end === 'max') s.restMax = txt
   else s.restMin = txt
+  _sfKeepGroup(containerId)
   _tsRerender(containerId)
 }
 
