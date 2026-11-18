@@ -3537,7 +3537,8 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
       },
       scales: {
         x: xs
-          ? { type: 'linear', min: Math.min(...xs), max: Math.max(...xs), ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, maxTicksLimit: 6, precision: 0, callback: v => _chartDayLabel(v) }, grid: { display: false } }
+          // Bounded by the data; with every point on ONE day (one session, a first weigh-in) a day either side, or the axis has no width to draw in (review, 2026-11-18).
+          ? { type: 'linear', min: Math.min(...xs) - (Math.min(...xs) === Math.max(...xs) ? 1 : 0), max: Math.max(...xs) + (Math.min(...xs) === Math.max(...xs) ? 1 : 0), ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, maxTicksLimit: 6, precision: 0, callback: v => _chartDayLabel(v) }, grid: { display: false } }
           : { ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
         // On a DUAL-axis chart each axis is tinted to match its own series, so the reader can tell
         // which scale belongs to which line. The coach weight chart did this (indigo left / amber

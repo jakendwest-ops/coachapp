@@ -254,6 +254,17 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
     expect(r).toEqual({ type: 'linear', gaps: [1, 21], tick: '23 Oct' })
   })
 
+  test('MIRROR: a chart whose points all fall on one day still draws them (one session, a first weigh-in)', async ({ page }) => {
+    await soloView(page)
+    const r = await page.evaluate(() => {
+      const c = document.createElement('canvas'); c.id = 'one-day-chart'; c.width = 300; c.height = 150; document.body.appendChild(c)
+      const ch = _renderMetricChart(c, { labels: ['1 Oct'], dates: ['2026-10-01'], series: [{ data: [100] }], legend: false })
+      const p = ch.getDatasetMeta(0).data[0], out = { x: p.x, y: p.y }
+      ch.destroy(); c.remove(); return out
+    })
+    expect(Number.isFinite(r.x) && Number.isFinite(r.y), `the point has a place on the canvas: ${JSON.stringify(r)}`).toBe(true)
+  })
+
   test('with one weigh-in in all, the chart says when it will appear rather than asking for a longer range', async ({ page }) => {
     await page.clock.setFixedTime(new Date('2026-11-17T12:00:00Z'))
     await soloView(page)
