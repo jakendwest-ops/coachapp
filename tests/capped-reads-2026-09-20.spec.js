@@ -67,7 +67,7 @@ test.describe('weight history, personal bests and the data export past the 200-r
             wantStale: fmtWeight(STALE_KG, { spaced: true }),
             wantTie: fmtWeight(71, { spaced: true }),
             chartPoints: ds ? ds.length : null,
-            chartLast: ds ? ds[ds.length - 1] : null,
+            chartLast: ds ? ds[ds.length - 1].y : null,      // points are { x: day, y } since the axis is by date (2026-11-18)
             wantChartLast: weightToPref(NEWEST_KG),
             hasLogButton: [...el.querySelectorAll('button')].some(b => b.textContent.includes('+ Log weight')),
             hasRetry: [...el.querySelectorAll('button')].some(b => /try again/i.test(b.textContent)),

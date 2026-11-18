@@ -219,7 +219,8 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
     await show(page)
     const pressed = host(page).locator('[data-pw-range][aria-pressed="true"]')
     await expect(pressed).toHaveText('3M')
-    const data = () => page.evaluate(() => { const c = Chart.getChart('pw-chart'); return c ? c.data.datasets.slice(0, 2).map(d => d.data.map(Number)) : null })
+    // Points are { x: day number, y } since the axis is by date (2026-11-18): the values are the y's.
+    const data = () => page.evaluate(() => { const c = Chart.getChart('pw-chart'); return c ? c.data.datasets.slice(0, 2).map(d => d.data.map(p => Number(p.y))) : null })
     // 3M = 20 Aug to 17 Nov: the six weigh-ins from 25 Aug. Each average is the weigh-ins on that day and the 6 days before it.
     expect(await data()).toEqual([[106.8, 107.3, 105.2, 108, 109.7, 110.3], [106.8, 107.3, 106.25, 108, 109.7, 110]])
     await host(page).locator('[data-pw-range="1M"]').click()
@@ -238,6 +239,19 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
     await show(page, { logs: [row('2026-02-01', 90), row('2026-03-01', 89)] })
     await expect(host(page).locator('[data-pw-range][aria-pressed="true"]')).toHaveText('All')
     await expect(host(page).locator('#pw-chart-empty')).toBeHidden()
+  })
+
+  // 2026-11-18 (audit backlog #5): the chart spaces weigh-ins by their DATE, so a three-week gap looks like three weeks, not like the next day.
+  test('the weight chart places each weigh-in by its date: a gap of 21 days is 21 times a gap of one day, and the axis reads as dates', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-17T12:00:00Z'))
+    await soloView(page)
+    await show(page, { logs: [row('2026-10-01', 90), row('2026-10-02', 89.8), row('2026-10-23', 89)] })
+    await host(page).locator('[data-pw-range="All"]').click()
+    const r = await page.evaluate(() => {
+      const c = Chart.getChart('pw-chart'), xs = c.data.datasets[0].data.map(p => p.x)
+      return { type: c.options.scales.x.type, gaps: [xs[1] - xs[0], xs[2] - xs[1]], tick: c.options.scales.x.ticks.callback(xs[2]) }
+    })
+    expect(r).toEqual({ type: 'linear', gaps: [1, 21], tick: '23 Oct' })
   })
 
   test('with one weigh-in in all, the chart says when it will appear rather than asking for a longer range', async ({ page }) => {

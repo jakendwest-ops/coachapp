@@ -268,11 +268,11 @@ async function renderLiftPage() {
   const unitText = window._unitPrefs.weight
   if (bests.length > 1) {
     const asc = [...bests].reverse()
-    _renderMetricChart('pb-hist-chart', { labels: asc.map(b => _pwFmtShort(b.recorded_at)), series: [{ label: `1RM (${unitText})`, data: asc.map(b => dispNum(parseFloat(b.one_rm_kg))), colour: _METRIC_COLORS.topWeight, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
+    _renderMetricChart('pb-hist-chart', { labels: asc.map(b => _pwFmtShort(b.recorded_at)), dates: asc.map(b => b.recorded_at),series: [{ label: `1RM (${unitText})`, data: asc.map(b => dispNum(parseFloat(b.one_rm_kg))), colour: _METRIC_COLORS.topWeight, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
   }
   if (!hist.error) {
     const pts = _pbE1rmPoints(hist.sessions)
-    if (pts.length) _renderMetricChart('pb-e1rm-chart', { labels: pts.map(p => _pwFmtShort(p.date)), series: [{ label: `Estimated 1RM (${unitText})`, data: pts.map(p => dispNum(p.kg)), colour: _METRIC_COLORS.e1rm, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
+    if (pts.length) _renderMetricChart('pb-e1rm-chart', { labels: pts.map(p => _pwFmtShort(p.date)), dates: pts.map(p => p.date),series: [{ label: `Estimated 1RM (${unitText})`, data: pts.map(p => dispNum(p.kg)), colour: _METRIC_COLORS.e1rm, fill: true }], height: true, legend: false, yFormat: v => `${_tickNum(v)} ${unitText}` })
   }
 }
 
@@ -2487,6 +2487,7 @@ function _drawWeightChart() {
   if (dispBf.some(v => v != null)) pwSeries.push({ label: 'Body fat %', data: dispBf, colour: _METRIC_COLORS.intensity, axis: 'y2', spanGaps: true })
   _renderMetricChart('pw-chart', {
     labels: logs.map(l => _pwFmtShort(l.date)),
+    dates: logs.map(l => l.date),      // spaced by date (2026-11-18)
     series: pwSeries,
     yRange,
     height: true,   // the canvas sits in a fixed-height box, so aspect ratio must not drive it
@@ -3462,7 +3463,13 @@ function _chartTheme() {
 // exactly what it always got: `selectedIndex()` returns the highlighted point (a hollow, larger dot — read on every draw, so
 // changing the selection needs only chart.update('none')); `onPick(index)` is called with the tapped point's index;
 // `tooltipLabel(ctx)` replaces the tooltip line.
-function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange, legend, height, tooltipUnit, stepSize, selectedIndex, onPick, tooltipLabel } = {}) {
+// `dates` (opt-in, 2026-11-18, audit backlog #5): one YYYY-MM-DD per point. The x axis is then a linear count of DAYS, so a three-week gap looks like three weeks,
+// not like the next day; the axis ticks and the tooltip title read as dates. Points become { x: day number, y }. Without it, the axis is the evenly spaced
+// category axis every other chart keeps. Day numbers come from the date's own parts (UTC), so a clock change cannot move a point.
+const _chartDayNo = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000 }
+const _chartDayLabel = x => new Date(Math.round(x) * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' })
+/** @param {string|HTMLCanvasElement} target @param {Record<string, any>} [opts] */
+function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange, legend, height, tooltipUnit, stepSize, selectedIndex, onPick, tooltipLabel, dates } = {}) {
   const el = typeof target === 'string' ? document.getElementById(target) : target
   if (!el || !Array.isArray(series) || !series.length) return null
   // Resolve by CANVAS, so an instance created by any path — including one this registry lost track of
@@ -3475,18 +3482,19 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
   const showLegend = legend != null ? legend : series.filter(s => s.label).length > 1
   const fmtY = yFormat || (v => String(_tickNum(v)))
   const fmtY2 = y2Format || (v => _tickNum(v) + '%')
+  const xs = Array.isArray(dates) ? dates.map(_chartDayNo) : null
 
   const chart = new Chart(el.getContext('2d'), {
     type: 'line',
     data: {
-      labels: labels || [],
+      labels: xs ? [] : (labels || []),
       datasets: series.map(s => {
         const colour = s.colour || t.accent
         const baseR = s.pointRadius != null ? s.pointRadius : 3
         const pickIdx = typeof selectedIndex === 'function' ? selectedIndex : null
         return {
           label: s.label || '',
-          data: s.data,
+          data: xs ? (s.data || []).map((y, i) => ({ x: xs[i], y })) : s.data,
           borderColor: colour,
           // Alpha suffix on a hex, matching the palette's existing convention.
           backgroundColor: s.fill ? (colour.length === 7 ? colour + '18' : colour) : 'transparent',
@@ -3510,12 +3518,14 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
       maintainAspectRatio: height ? false : true,
       animation: { duration: 250 },
       // Crosshair-style shared tooltip — the single biggest readability win from the coach chart.
-      interaction: { mode: 'index', intersect: false },
+      // By date, the nearest point along x (points are no longer one per category slot); otherwise the crosshair-style index tooltip.
+      interaction: xs ? { mode: 'nearest', axis: 'x', intersect: false } : { mode: 'index', intersect: false },
       ...(onPick ? { onClick: (e, els, ch) => { const hit = ch.getElementsAtEventForMode(e, 'index', { intersect: false }, false)[0]; if (hit) onPick(hit.index) } } : {}),
       plugins: {
         legend: { display: showLegend, labels: { font: { size: 11 }, color: t.muted, boxWidth: 20, usePointStyle: true } },
         tooltip: {
           callbacks: {
+            ...(xs ? { title: items => (items.length ? _chartDayLabel(items[0].parsed.x) : '') } : {}),
             label: tooltipLabel || (ctx => {
               const v = ctx.parsed.y
               if (v == null) return null
@@ -3526,7 +3536,9 @@ function _renderMetricChart(target, { labels, series, yFormat, y2Format, yRange,
         },
       },
       scales: {
-        x: { ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
+        x: xs
+          ? { type: 'linear', min: Math.min(...xs), max: Math.max(...xs), ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, maxTicksLimit: 6, precision: 0, callback: v => _chartDayLabel(v) }, grid: { display: false } }
+          : { ticks: { color: t.muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
         // On a DUAL-axis chart each axis is tinted to match its own series, so the reader can tell
         // which scale belongs to which line. The coach weight chart did this (indigo left / amber
         // right) and the first cut of this helper flattened both to muted — which is unreadable
