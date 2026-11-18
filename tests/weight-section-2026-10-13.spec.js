@@ -240,6 +240,13 @@ test.describe('Body Weight: the goal card, the log sheet and the list (2026-10-1
     await expect(host(page).locator('#pw-chart-empty')).toBeHidden()
   })
 
+  test('with one weigh-in in all, the chart says when it will appear rather than asking for a longer range', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-11-17T12:00:00Z'))
+    await soloView(page)
+    await show(page, { logs: [row('2026-11-10', 90)] })
+    await expect(host(page).locator('#pw-chart-empty')).toHaveText('The chart appears from your second weigh-in.')
+  })
+
   test('with no entries yet the page says so, and the log button and sheet are still there', async ({ page }) => {
     await soloView(page)
     await show(page, { logs: [] })

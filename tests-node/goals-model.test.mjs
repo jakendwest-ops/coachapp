@@ -164,11 +164,24 @@ describe('small formatters', () => {
   })
 })
 
+describe('_goalStaleWeeks - a hand-updated goal that has gone quiet (2026-11-18)', () => {
+  const w = (since, today) => get('_goalStaleWeeks')(since, today)
+  test('two weeks or more: whole weeks; under two weeks, or no day: 0', () => {
+    assert.equal(w('2026-10-03', '2026-10-17'), 2)
+    assert.equal(w('2026-10-03', '2026-11-18'), 6)
+    assert.equal(w('2026-10-04', '2026-10-17'), 0, '13 days')
+    assert.equal(w(null, '2026-10-17'), 0)
+    assert.equal(w('2099-01-01', '2026-10-17'), 0, 'a future day is not stale')
+  })
+})
+
 describe('goalCard - the list card', () => {
   const card = (g, cid = 'c1') => get('goalCard')(g, cid)
   const text = h => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ')
   const squat = { id: 'g1', title: 'Squat 160 kg', status: 'active', metric_unit: 'kg', start_value: 100, current_value: 130, target_value: 160, target_date: '2099-03-13',
-    goal_check_ins: [{ date: '2026-09-12' }, { date: '2026-10-03' }, { date: '2026-08-01' }],   // not in date order: the newest is found, not the last
+    // not in date order: the newest is found, not the last. In 2099 so that on any real day they are not two weeks old: an older update reads
+    // "Not updated for N weeks" since 2026-11-18 (_goalStaleWeeks, pinned below).
+    goal_check_ins: [{ date: '2099-09-12' }, { date: '2099-10-03' }, { date: '2099-08-01' }],
     goal_milestones: [{ id: 's1', order: 1, title: 'Squat 120 kg', target_value: 120 }, { id: 's2', order: 2, title: 'Squat 140 kg', target_value: 140 }, { id: 's3', order: 3, title: 'Squat 150 kg', target_value: 150 }] }
   test('a numeric goal: the number, how far to go, a bar, the next step, the steps count, the last update and the date', () => {
     const h = card(squat), t = text(h)

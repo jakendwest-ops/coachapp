@@ -1420,6 +1420,7 @@ db.auth.onAuthStateChange((event, session) => {
 
 async function renderProgress(el) {
   window._pbOpenLift = null      // a lift page left open by a previous visit must not decide what a later save repaints
+  _weightRange = null            // the Bodyweight range is per visit: a new visit (or a Client/Personal switch) opens on 3M again, or All when 3M is empty
   // Destroy any charts left over from whichever Performance sub-view was active before this
   // top-level tab switch -- the per-render destroy calls inside _renderPerfExerciseList/
   // renderProgressPerSession only guard re-renders WITHIN the same sub-view (a keystroke, a range
@@ -2062,7 +2063,9 @@ let _perfSessionsShown = _PERF_SESSIONS_SHOWN
 function _drawPerfSessionCards() {
   const host = document.getElementById('perf-sess-cards'), data = /** @type {any} */ (window)._perfSessionData
   if (!host || !data || !data.list) return
-  _destroyManagedCharts()      // an exercise chart opened inside a card is about to be detached
+  // Only the charts INSIDE these cards (an exercise chart opened in one is about to be detached): a blanket _destroyManagedCharts() here would also take out
+  // a chart open beside the list - the coach's client Performance tab draws its records above the Sessions (app-clients.js). Found by review, 2026-11-18.
+  _perfFree(host)
   const list = data.list, real = [], empty = []
   let k = 0
   for (; k < list.length && real.length < _perfSessionsShown; k++) (_sessionHasSets(list[k]) ? real : empty).push(k)
@@ -2460,7 +2463,11 @@ function _drawWeightChart() {
   const idx = all.map((l, i) => i).filter(i => !from || String(all[i].date).slice(0, 10) >= from)
   wrap.hidden = idx.length < 2
   empty.hidden = idx.length >= 2
-  if (idx.length < 2) { empty.textContent = `Fewer than 2 weigh-ins in ${_WEIGHT_RANGE_WORDS[_weightRange] || 'this range'}. Pick a longer range to see the chart.`; return }
+  if (idx.length < 2) {
+    // One weigh-in in all: no range can help, so say when the chart will appear instead (review, 2026-11-18).
+    empty.textContent = all.length < 2 ? 'The chart appears from your second weigh-in.' : `Fewer than 2 weigh-ins in ${_WEIGHT_RANGE_WORDS[_weightRange] || 'this range'}. Pick a longer range to see the chart.`
+    return
+  }
   const logs = idx.map(i => all[i])
   // Converted to the display unit BEFORE the axis maths, so the points and the bounds are in one unit. The axis blends the start and goal weights
   // with the weigh-ins shown (Math.min/max, so a gain goal does not invert it).

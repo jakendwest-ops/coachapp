@@ -65,7 +65,10 @@ test.describe('Sessions: vs last time', () => {
     await show(page, [real[0], empties[0], real[1], real[2], empties[1], ...real.slice(3)])
     await expect(page.locator('#sc-host [data-sess-card]:not([data-sess-empty-card])')).toHaveCount(10)
     await expect(page.locator('#sc-host [data-sess-empty-toggle]')).toHaveText('2 started sessions with no sets logged')
+    // A chart open BESIDE the list (the coach's client Performance tab draws its records above the Sessions) must survive the redraw (review, 2026-11-18).
+    await page.evaluate(() => { const c = document.createElement('canvas'); c.id = 'beside-chart'; document.getElementById('main-content').prepend(c); _renderMetricChart(c, { labels: ['a', 'b'], series: [{ data: [1, 2] }] }) })
     await page.locator('#sc-host [data-sess-older]').click()
+    expect(await page.evaluate(() => !!Chart.getChart(document.getElementById('beside-chart'))), 'the chart beside the list is still drawn').toBe(true)
     await expect(page.locator('#sc-host [data-sess-card]:not([data-sess-empty-card])')).toHaveCount(13)
     await expect(page.locator('#sc-host [data-sess-older]'), 'nothing older left').toHaveCount(0)
     await expect(page.locator('#sc-host [data-sess-card]').nth(12)).toContainText('W12')
