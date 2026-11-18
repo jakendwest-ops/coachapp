@@ -2,7 +2,7 @@
 
 Tag-gated releases (`docs/releases/*.md`, `scripts/release.mjs`), not sprints; the file keeps the name it was asked for.
 
-**Snapshot taken:** 2026-11-17, from `git log` and `docs/releases/`. Re-run those rather than trusting this file for anything time-sensitive.
+**Snapshot taken:** 2026-11-18, from `git log` and `docs/releases/`. Re-run those rather than trusting this file for anything time-sensitive.
 
 ## Last shipped
 
@@ -12,8 +12,10 @@ Tag-gated releases (`docs/releases/*.md`, `scripts/release.mjs`), not sprints; t
 
 ## In flight
 
-Nothing is unreleased since `v2026.11.7` (`git log v2026.11.7..HEAD` is empty). Jake's overwritten Week 2-4 Mondays still need their numbers put
-back by hand. The Add exercise sheet is parked with a settled list. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in
+Unreleased since `v2026.11.7`: on the sets sheet, Fixed / Range and rest − / + now keep "same for every set" instead of switching to
+"Each set different" (`5218e0f`, tidied in `51a9a57`; [row](bugs/2026-11-17-fixed-range-or-rest-step-switches-the-sets-sheet-to-each-set-different.md)).
+Its multi-agent review saw `5218e0f`; re-record the review on HEAD before the next release. Jake does not want the old overwritten
+Week 2-4 Mondays restored (2026-11-15). The Add exercise sheet is parked with a settled list. Waiting on Jake: his phone check of the `fixed-awaiting-jake` rows in
 [bugs/](bugs/); the round-2 sound test ([row](bugs/2026-10-28-runner-beeps-worked-for-two-exercises-then-were-never-heard-again.md)); whether
 Sign out should end only this device's session ([row](bugs/2026-10-03-sign-out-ends-every-device-session.md)).
 
