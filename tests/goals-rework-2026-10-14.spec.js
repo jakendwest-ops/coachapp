@@ -110,6 +110,36 @@ async function setup(page, { goals = [SQUAT, WEIGHT, RUN, DEAD, PAUSED], ms = MS
     else if (render) await openGoal(render, 'cid')
   }, { goals, ms, ci, role, fail, render, now: NOW_ISO })
 }
+// 2026-11-18 (audit backlog #14): a hand-updated goal that has gone quiet says so, and a goal that has reached its number offers to be finished.
+test.describe('Stale and reached goals', () => {
+  test('a hand-updated goal not updated for 2 weeks says how long; one updated lately, a linked one, and a paused one do not', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(NOW_ISO))
+    await soloView(page)
+    const ci = [...CI.filter(c => c.goal_id !== 'g-squat'), { id: 'c9', goal_id: 'g-squat', date: '2026-09-20', current_value: 130, notes: null, created_at: '2026-09-20T10:00:00Z' }]
+    await setup(page, { ci, goals: [SQUAT, WEIGHT, RUN, PAUSED, { ...WEIGHT, id: 'g-linked', title: 'Linked weight', linked_metric: 'bodyweight' }] })
+    await expect(card(page, 'Squat 160 kg').locator('[data-goal-stale]')).toHaveText('Not updated for 3 weeks')
+    await expect(card(page, 'Body weight 85 kg').locator('[data-goal-stale]'), 'updated 3 days ago').toHaveCount(0)
+    await expect(card(page, 'Linked weight').locator('[data-goal-stale]'), 'it updates itself').toHaveCount(0)
+    await expect(card(page, 'Pull-ups x10').locator('[data-goal-stale]'), 'paused on purpose').toHaveCount(0)
+  })
+  test('a goal whose number has reached its target offers Finish this goal, which opens the edit sheet', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(NOW_ISO))
+    await soloView(page)
+    await setup(page, { goals: [{ ...SQUAT, current_value: 161 }], render: 'g-squat' })
+    await expect(tab(page).locator('[data-goal-reached]')).toContainText('You have reached your target')
+    await tab(page).locator('[data-goal-reached] button').click()
+    await expect(page.locator('#edit-goal-modal')).toBeVisible()
+  })
+  test('MIRROR: a goal short of its target, or a client (who cannot finish goals), gets no prompt', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(NOW_ISO))
+    await soloView(page)
+    await setup(page, { render: 'g-squat' })
+    await expect(tab(page).locator('[data-goal-reached]')).toHaveCount(0)
+    await setup(page, { goals: [{ ...SQUAT, current_value: 161 }], render: 'g-squat', role: 'client' })
+    await expect(tab(page).locator('[data-goal-reached]')).toHaveCount(0)
+  })
+})
+
 // 2026-11-17 (audit backlog #7): the goal page projects the finish from the last 6 weeks of readings (pinned in tests-node/goal-projection.test.mjs).
 test.describe('Goal projection', () => {
   test('a goal updated by hand says when it gets there at the current rate, and what the due date needs', async ({ page }) => {
@@ -144,6 +174,8 @@ const localToday = page => page.evaluate(() => _ymdLocal(new Date()))
 
 test.describe('Goals list (2026-10-14)', () => {
   test('in progress first, a card per goal with the number, how far to go, the bar, the next step, the steps count, the last update and the date', async ({ page }) => {
+    // Pinned to the fixtures' own day: since 2026-11-18 an update older than two weeks reads "Not updated for N weeks", so on the real date 3 Oct is stale.
+    await page.clock.setFixedTime(new Date(NOW_ISO))
     await soloView(page)
     await setup(page)
     await expect(tab(page).locator('.pw-group')).toHaveText(['In progress · 4'])

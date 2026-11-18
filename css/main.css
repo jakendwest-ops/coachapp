@@ -1628,6 +1628,7 @@ a.cockpit-btn { padding: 0 14px; border: 1px solid var(--border); border-radius:
 .gl-nums b { font-size:var(--text-xl); }
 .gl-muted { color:var(--text-muted); }
 .gl-late { color:var(--danger-text); }
+.gl-stale { color:var(--warning-text); }
 .gl-bar { margin-top:0; }
 .gl-meta { display:flex; flex-direction:column; gap:6px; padding-top:10px; border-top:1px solid var(--border); font-size:var(--text-md); }
 .gl-next { font-size:var(--text-base); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

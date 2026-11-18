@@ -800,6 +800,14 @@ function _goalTimeLeft(due, today) {
   return { text: days < 14 ? `${days} day${s(days)} left` : `${Math.round(days / 7)} weeks left`, late: false }
 }
 const _goalFinished = g => g?.status === 'completed' || g?.status === 'abandoned'
+// Whole weeks since a YYYY-MM-DD day, when that is 2 weeks or more; 0 otherwise (or with no day). Whole days from the dates' own parts.
+function _goalStaleWeeks(since, today) {
+  const ms = ymd => { const [y, m, d] = String(ymd || '').slice(0, 10).split('-').map(Number); return y && m && d ? Date.UTC(y, m - 1, d) : null }
+  const a = ms(since), b = ms(today)
+  if (a == null || b == null) return 0
+  const days = Math.round((b - a) / 86400000)
+  return days >= 14 ? Math.floor(days / 7) : 0
+}
 
 // ─── Projection (2026-11-17, audit backlog #7): when the target is reached at the current rate, and what rate the due date needs ───────────────────
 // points: [{ date: 'YYYY-MM-DD', v }] readings in the goal's own unit (updates, weigh-ins or session top sets); n: _goalNums(g). The rate is a straight
@@ -944,6 +952,8 @@ function goalCard(g, clientId) {
   const pct = n ? Math.round(_goalFrac(n) * 100) : steps.length ? Math.round(done / steps.length * 100) : 0
   const last = (g.goal_check_ins || []).map(c => String(c.date || '')).sort().pop()
   const left = g.target_date && !_goalFinished(g) ? _goalTimeLeft(g.target_date, _ymdLocal(new Date())) : null
+  // Gone quiet (2026-11-18, audit backlog #14): an active, hand-updated goal with numbers and no update for 2 weeks or more (counted from the goal's start when it has none).
+  const stale = n && !g.linked_metric && g.status === 'active' ? _goalStaleWeeks(last || (g.created_at ? _ymdLocal(new Date(g.created_at)) : null), _ymdLocal(new Date())) : 0
   // the year only when it is not this one (a goal due next March must not read as one due this March)
   const when = g.target_date ? `Due ${_glDate(g.target_date, String(g.target_date).slice(0, 4) !== _ymdLocal(new Date()).slice(0, 4))}${left ? ' · ' + left.text : ''}` : 'No date set'
   const pill = _GOAL_STATUS_PILL[g.status]
@@ -959,7 +969,7 @@ function goalCard(g, clientId) {
       ${n || steps.length ? `<div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>` : ''}
       <div class="gl-meta">
         ${next ? `<div class="gl-next"><span class="gl-muted">Next</span> ${escapeHtml(next.title)}</div>` : steps.length && !_goalFinished(g) ? '<div class="gl-muted">All steps done</div>' : ''}
-        <div class="gl-meta-row"><span>${n && steps.length ? `${done} of ${steps.length} steps · ` : ''}${g._liveFailed ? 'Could not read the latest number' : g.linked_metric && !_goalFinished(g) ? 'Updates automatically' : last ? 'Updated ' + _glDate(last) : 'No updates yet'}</span><span class="${left?.late ? 'gl-late' : ''}">${when}</span></div>
+        <div class="gl-meta-row"><span>${n && steps.length ? `${done} of ${steps.length} steps · ` : ''}${g._liveFailed ? 'Could not read the latest number' : g.linked_metric && !_goalFinished(g) ? 'Updates automatically' : stale ? `<span class="gl-stale" data-goal-stale>Not updated for ${stale} weeks</span>` : last ? 'Updated ' + _glDate(last) : 'No updates yet'}</span><span class="${left?.late ? 'gl-late' : ''}">${when}</span></div>
       </div>
     </div>
   `
@@ -1199,7 +1209,8 @@ async function openGoal(goalId, clientId) {
         <div class="gl-sub">${g.status === 'completed' ? (pct >= 100 ? 'Goal reached' : `Marked as done · ${pct}% of the way`) : `${_glFmt(_goalToGo(n))}${unit} to go · ${pct}% there`}</div>
         <div class="gl-barwrap"><div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>${marks}</div>
         <div class="pw-legend"><span><strong>${_glFmt(n.start)}${unit}</strong><br>${started ? 'Started ' + started : 'Start'}</span><span class="gl-end"><strong>${_glFmt(n.target)}${unit}</strong><br>Target</span></div>
-        ${_goalFinished(g) ? '' : '<div class="pb-note" id="gl-projection" hidden></div>'}`
+        ${_goalFinished(g) ? '' : '<div class="pb-note" id="gl-projection" hidden></div>'}
+        ${canManage && !_goalFinished(g) && (n.up ? n.cur >= n.target : n.cur <= n.target) ? `<div class="pb-note" data-goal-reached>You have reached your target. <button type="button" class="pw-link gl-link" onclick="showEditGoalModal('${gid}','${cid}')">Finish this goal…</button></div>` : ''}`
       : `
         ${steps.length ? `<div class="pw-card-row"><div class="pw-big">${nDone}<span class="pw-big-unit"> of ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}</span></div>${pill}</div>
         <div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>` : `<div class="pw-card-row"><div class="gl-sub gl-nothing">Nothing to track yet.${canManage ? ' Add a step below, or set From and To in Edit.' : ''}</div>${pill}</div>`}`}
