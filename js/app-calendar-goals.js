@@ -801,6 +801,55 @@ function _goalTimeLeft(due, today) {
 }
 const _goalFinished = g => g?.status === 'completed' || g?.status === 'abandoned'
 
+// ─── Projection (2026-11-17, audit backlog #7): when the target is reached at the current rate, and what rate the due date needs ───────────────────
+// points: [{ date: 'YYYY-MM-DD', v }] readings in the goal's own unit (updates, weigh-ins or session top sets); n: _goalNums(g). The rate is a straight
+// line (least squares) through the readings of the last `windowDays` (6 weeks; a body weight goal passes 28, the Bodyweight page's own window, so the two
+// pages cannot give different dates for the same weigh-ins). The date counts on from TODAY, from the latest reading, at that rate - the way _weightTrend
+// (app-progress.js) does it - and is given only within 104 weeks, as there. `slow` marks a lift moving the right way too slowly to get there in that time.
+// Null when there is nothing to say: no numbers, already reached, or neither a rate nor a due date. Pure. tests-node/goal-projection.test.mjs.
+const _GOAL_RATE_DAYS = 42, _GOAL_ETA_WEEKS = 104
+function _goalProjection(points, n, due, today, windowDays = _GOAL_RATE_DAYS) {
+  if (!n || (n.up ? n.cur >= n.target : n.cur <= n.target)) return null
+  const dayNo = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000 }
+  const ymdOf = x => new Date(Math.round(x) * 86400000).toISOString().slice(0, 10)      // a UTC day number back to its own date
+  const t = dayNo(today)
+  const pts = (points || []).map(p => ({ x: dayNo(p.date), y: Number(p.v) })).filter(p => Number.isFinite(p.y) && p.x <= t && p.x > t - windowDays).sort((a, b) => a.x - b.x)
+  let perWeek = null, eta = null, slow = false
+  if (pts.length >= 2 && pts[pts.length - 1].x - pts[0].x >= 7) {
+    const mx = pts.reduce((s, p) => s + p.x, 0) / pts.length, my = pts.reduce((s, p) => s + p.y, 0) / pts.length
+    const slope = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / pts.reduce((s, p) => s + (p.x - mx) ** 2, 0)
+    perWeek = slope * 7
+    const latest = pts[pts.length - 1].y
+    const toward = Math.abs(perWeek) >= 0.05 && (n.up ? slope > 0 : slope < 0) && (n.up ? latest < n.target : latest > n.target)
+    if (toward) {
+      const days = (n.target - latest) / slope
+      if (days <= _GOAL_ETA_WEEKS * 7) eta = ymdOf(t + days)
+      else slow = true
+    }
+  }
+  const dueDays = due ? dayNo(due) - t : null
+  const neededPerWeek = dueDays != null && dueDays > 0 ? (n.target - n.cur) / (dueDays / 7) : null
+  if (perWeek == null && neededPerWeek == null) return null
+  return { perWeek, eta, slow, neededPerWeek, target: n.target, up: n.up }
+}
+
+// The projection in words, or '' for nothing. `unit` is ' kg' (leading space) or ''.
+function _goalProjectionText(p, unit, due, today) {
+  if (!p) return ''
+  const yr = ymd => String(ymd).slice(0, 4) !== String(today).slice(0, 4)
+  const rate = v => `${v > 0 ? '+' : v < 0 ? '−' : ''}${_glFmt(Math.abs(v))}${unit} a week`
+  const out = []
+  if (p.perWeek != null) {
+    const flat = Number(Math.abs(p.perWeek).toFixed(1)) === 0
+    if (p.eta) out.push(`At your current rate (${rate(p.perWeek)}) you reach ${_glFmt(p.target)}${unit} around ${_glDate(p.eta, yr(p.eta))}.`)
+    else if (p.slow) out.push(`Moving towards the target (${rate(p.perWeek)}), but too slowly to reach it within two years.`)
+    else if (flat) out.push('No change lately.')
+    else if (p.up ? p.perWeek < 0 : p.perWeek > 0) out.push('Moving away from the target lately.')
+  }
+  if (p.neededPerWeek != null) out.push(`To reach it by ${_glDate(due, yr(due))} you need ${rate(p.neededPerWeek)}.`)
+  return out.join(' ')
+}
+
 // ─── LINKED GOALS (Jake, 2026-11-08) ──────────────────────────────────────────
 // A goal can follow body weight, or a lift's heaviest set logged since the goal began (From is where it starts; an old best must not fill the bar on day one). A finished goal stays where it
 // finished: its number is saved at that moment and is no longer read live. The number is worked out from the logged data each time a screen opens, and is NEVER written back: one fact, one
@@ -1149,7 +1198,8 @@ async function openGoal(goalId, clientId) {
         <div class="pw-card-row"><div class="pw-big">${_glFmt(n.cur)}<span class="pw-big-unit">${unit}</span></div>${pill}</div>
         <div class="gl-sub">${g.status === 'completed' ? (pct >= 100 ? 'Goal reached' : `Marked as done · ${pct}% of the way`) : `${_glFmt(_goalToGo(n))}${unit} to go · ${pct}% there`}</div>
         <div class="gl-barwrap"><div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>${marks}</div>
-        <div class="pw-legend"><span><strong>${_glFmt(n.start)}${unit}</strong><br>${started ? 'Started ' + started : 'Start'}</span><span class="gl-end"><strong>${_glFmt(n.target)}${unit}</strong><br>Target</span></div>`
+        <div class="pw-legend"><span><strong>${_glFmt(n.start)}${unit}</strong><br>${started ? 'Started ' + started : 'Start'}</span><span class="gl-end"><strong>${_glFmt(n.target)}${unit}</strong><br>Target</span></div>
+        ${_goalFinished(g) ? '' : '<div class="pb-note" id="gl-projection" hidden></div>'}`
       : `
         ${steps.length ? `<div class="pw-card-row"><div class="pw-big">${nDone}<span class="pw-big-unit"> of ${steps.length} ${steps.length === 1 ? 'step' : 'steps'}</span></div>${pill}</div>
         <div class="pw-bar gl-bar"><i style="width:${pct}%"></i></div>` : `<div class="pw-card-row"><div class="gl-sub gl-nothing">Nothing to track yet.${canManage ? ' Add a step below, or set From and To in Edit.' : ''}</div>${pill}</div>`}`}
@@ -1189,6 +1239,40 @@ async function openGoal(goalId, clientId) {
       </div>
       ${checkIns.length > 5 ? `<button type="button" class="pw-link gl-link" aria-expanded="false" onclick="_toggleAllCheckIns(this)">Show all ${checkIns.length}</button>` : ''}` : ''}
   `
+  if (n) _fillGoalProjection(g)
+}
+
+// Fills the goal page's projection line AFTER it has drawn (a lift goal reads that lift's history). The readings: weigh-ins for a body weight goal, each
+// session's top set for a lift goal, the updates for a goal updated by hand; all in the goal's own unit. A failed read leaves the line out: it never guesses.
+async function _fillGoalProjection(g) {
+  const el = document.getElementById('gl-projection')
+  if (!el) return
+  const today = _ymdLocal(new Date())
+  const began = g.created_at ? _ymdLocal(new Date(g.created_at)) : null      // the goal's first day, as its bar counts it (_goalsApplyLive)
+  const windowDays = g.linked_metric === 'bodyweight' ? 28 : _GOAL_RATE_DAYS     // body weight: the Bodyweight page's own window (_weightTrend)
+  let pts = []
+  try {
+    if (g.linked_metric === 'bodyweight') {
+      const [y, m, d] = today.split('-').map(Number)
+      const from = _ymdLocal(new Date(y, m - 1, d - (windowDays - 1)))
+      const { data, error } = await db.from('weight_logs').select('date, weight_kg').eq('client_id', g.client_id).gte('date', from).order('date').limit(200)
+      if (error) throw error
+      pts = (data || []).map(r => ({ date: r.date, v: _goalLiveValue(parseFloat(r.weight_kg), g.metric_unit) }))
+    } else if (g.linked_metric === 'top_set') {
+      const sessions = await _fetchExerciseSessions(g.client_id, g.metric_label)
+      // Sessions since the goal began only, as its bar counts them (_prBaseline with `since`), so the rate and the bar agree.
+      pts = sessions.filter(s => !began || s.date >= began).map(s => ({ date: s.date, kg: _xsSessionMetrics(s.sets).top })).filter(p => p.kg > 0).map(p => ({ date: p.date, v: _goalLiveValue(p.kg, g.metric_unit) }))
+    } else {
+      // The updates, and the goal's From on the day it was set: a start and one update already give a rate.
+      pts = (g.goal_check_ins || []).filter(c => c.current_value != null && c.current_value !== '').map(c => ({ date: c.date, v: parseFloat(c.current_value) }))
+      if (began && g.start_value != null) pts.unshift({ date: began, v: parseFloat(g.start_value) })
+    }
+  } catch (err) { log.warn('_fillGoalProjection', 'readings unavailable', { goalId: g.id, code: err?.code }); return }
+  if (!el.isConnected) return      // the page moved on while this read
+  const text = _goalProjectionText(_goalProjection(pts, _goalNums(g), g.target_date, today, windowDays), g.metric_unit ? ' ' + g.metric_unit : '', g.target_date, today)
+  if (!text) return
+  el.textContent = text
+  el.hidden = false
 }
 
 // Turns a linked goal back into a by-hand one, keeping the number it had reached. Anchored and row-counted as saveEditGoal is.

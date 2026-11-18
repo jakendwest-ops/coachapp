@@ -110,6 +110,24 @@ async function setup(page, { goals = [SQUAT, WEIGHT, RUN, DEAD, PAUSED], ms = MS
     else if (render) await openGoal(render, 'cid')
   }, { goals, ms, ci, role, fail, render, now: NOW_ISO })
 }
+// 2026-11-17 (audit backlog #7): the goal page projects the finish from the last 6 weeks of readings (pinned in tests-node/goal-projection.test.mjs).
+test.describe('Goal projection', () => {
+  test('a goal updated by hand says when it gets there at the current rate, and what the due date needs', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(NOW_ISO))
+    await soloView(page)
+    await setup(page, { render: 'g-squat' })
+    await expect(tab(page).locator('#gl-projection')).toHaveText('At your current rate (+1.7 kg a week) you reach 160 kg around 16 Feb 2027. To reach it by 13 Mar 2027 you need +1.4 kg a week.')
+  })
+  test('MIRROR: a goal with no numbers, or a finished one, has no projection line', async ({ page }) => {
+    await page.clock.setFixedTime(new Date(NOW_ISO))
+    await soloView(page)
+    await setup(page, { render: 'g-run' })
+    await expect(tab(page).locator('#gl-projection')).toHaveCount(0)
+    await setup(page, { render: 'g-dead' })
+    await expect(tab(page).locator('#gl-projection')).toHaveCount(0)
+  })
+})
+
 async function soloView(page) {
   await soloReady(page)
   // _soloClientId is set BEFORE the dashboard paints. Until it has, a test that mounts into #main-content is overwritten by the late paint (the scroll test
