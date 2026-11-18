@@ -128,3 +128,17 @@ describe('_blockLiftSummary', () => {
     assert.equal(json(sum(ex, a, b)).both.length, 1)
   })
 })
+
+// 2026-11-18 (audit backlog #19): every restart of a plan is its own block, so after a few restarts the pickers filled with one-day "blocks". A finished run
+// shorter than 7 days is left out of the pickers; the current run and the blocks being compared always stay.
+describe('_blocksForPicker', () => {
+  const pick = (blocks, keep) => json(get('_blocksForPicker')(blocks, keep)).map(b => b.key)
+  test('finished runs under 7 days are left out; a week or more stays', () => {
+    assert.deepEqual(pick([block('a', '2026-11-02', '2026-11-08'), block('b', '2026-11-09', '2026-11-09'), block('c', '2026-10-26', '2026-10-31')], []), ['a'])
+  })
+  test('the current run and the compared blocks always stay, however short', () => {
+    const now = { ...block('live', '2026-11-16', '2026-11-17'), open: true }
+    assert.deepEqual(pick([now, block('b', '2026-11-09', '2026-11-09'), block('c', '2026-10-26', '2026-10-31')], ['c']), ['live', 'c'])
+  })
+  test('nothing in, nothing out', () => { assert.deepEqual(pick(null, []), []) })
+})

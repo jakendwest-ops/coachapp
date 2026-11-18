@@ -2904,6 +2904,14 @@ const _exerciseNamesInBlocks = (exercises, blocks, keys) => {
   return [...new Set(inScope.map(e => e.name))].sort((x, y) => x.localeCompare(y))
 }
 
+// The blocks the pickers offer (2026-11-18, audit backlog #19): every restart of a plan is its own block, so a few restarts filled the pickers with one-day
+// "blocks". A finished run shorter than 7 days (inclusive) is left out; the current run and any block in `keep` (the two compared, and the two picked)
+// always stay, however short. Pure. tests-node/blocks-summary.test.mjs.
+function _blocksForPicker(blocks, keep) {
+  const days = b => Math.round((new Date(b.end + 'T12:00:00').getTime() - new Date(b.start + 'T12:00:00').getTime()) / 86400000) + 1
+  return (blocks || []).filter(b => b.open || (keep || []).includes(b.key) || days(b) >= 7)
+}
+
 async function renderProgressPerProgram(clientId, el) {
   el.innerHTML = '<div class="loading-state">Loading plans…</div>'
   // Own token, mirroring _perfExerciseToken — a master account switching Client/Personal mid-fetch
@@ -2935,7 +2943,8 @@ async function renderProgressPerProgram(clientId, el) {
     ...(win.a.source === 'weeks' ? [stand(win.a, 'wk:this', 'Last 6 weeks')] : []),
     ...(win.b.source === 'weeks' ? [stand(win.b, 'wk:last', 'The weeks before')] : []),
     // Last block is the TRIMMED window (it stops the day before this one starts): the overlay and the dropdown use that same range, not the full run.
-    ...blocks.map(b => (b.key === win.b.key ? { ...b, start: win.b.start, end: win.b.end } : frozen && b.key === win.a.key ? { ...b, end: win.a.end, open: false } : b)),
+    ..._blocksForPicker(blocks.map(b => (b.key === win.b.key ? { ...b, start: win.b.start, end: win.b.end } : frozen && b.key === win.a.key ? { ...b, end: win.a.end, open: false } : b)),
+      [aKey, bKey, (window._blockState || {}).a, (window._blockState || {}).b]),
   ]
   const summary = _blockLiftSummary(exercises, win.a, win.b)
   // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
