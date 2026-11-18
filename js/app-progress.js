@@ -2046,7 +2046,7 @@ async function renderProgressPerSession(clientId, el) {
   _sessionVolumeBack = 0
   const weeks = whole ? _weeklyVolume(all, _ymdLocal(new Date())) : null
   // `all` only from the whole history: the bars' steps must never page through a partial one. `list` is what the cards page through (the latest few on a failed read).
-  window._perfSessionData = { history, weeks, whole, all: whole ? all : null, list: all, sessions: [], lastTime: [] }
+  /** @type {any} */ (window)._perfSessionData = { history, weeks, whole, all: whole ? all : null, list: all, sessions: [], lastTime: [] }
   _perfSessionsShown = _PERF_SESSIONS_SHOWN
 
   const top = whole
@@ -2479,6 +2479,7 @@ function _drawWeightChart() {
     ? { min: Math.floor(Math.min(...anchors) * 2) / 2, max: Math.ceil((Math.max(...anchors) + 1) * 2) / 2 }
     : {}
   const dispBf = logs.map(l => (l.body_fat_pct != null ? parseFloat(l.body_fat_pct) : null))
+  /** @type {any[]} */
   const pwSeries = [
     { label: `Weight (${weightUnit})`, data: dispWeights, colour: _METRIC_COLORS.topWeight, fill: true },
     { label: '7-day avg', data: idx.map(i => avgAll[i]), colour: _METRIC_COLORS.topWeight, dashed: true, pointRadius: 0 },
@@ -2944,7 +2945,7 @@ async function renderProgressPerProgram(clientId, el) {
     ...(win.b.source === 'weeks' ? [stand(win.b, 'wk:last', 'The weeks before')] : []),
     // Last block is the TRIMMED window (it stops the day before this one starts): the overlay and the dropdown use that same range, not the full run.
     ..._blocksForPicker(blocks.map(b => (b.key === win.b.key ? { ...b, start: win.b.start, end: win.b.end } : frozen && b.key === win.a.key ? { ...b, end: win.a.end, open: false } : b)),
-      [aKey, bKey, (window._blockState || {}).a, (window._blockState || {}).b]),
+      [aKey, bKey, (/** @type {any} */ (window)._blockState || {}).a, (/** @type {any} */ (window)._blockState || {}).b]),
   ]
   const summary = _blockLiftSummary(exercises, win.a, win.b)
   // Deliberately NOT window._trendCache. That global is owned by renderProgressStrength behind a
@@ -3292,7 +3293,7 @@ async function renderProgressStrength(el) {
   el.innerHTML = `
     ${_strengthHasAny(exercises, today) ? `<div class="pw-card" id="perf-story" data-strength-card>${_strengthCardInner(exercises, today, '6w')}</div>` : ''}
     <input class="field-input" id="perf-ex-search" placeholder="Search exercises…" style="margin-bottom:12px" autocomplete="off" oninput="_renderPerfExerciseList(this.value)">
-    <div class="pf-bar"><span class="pf-count" id="pf-count"></span><select class="field-input" id="pf-sort" aria-label="Sort exercises" onchange="_setTrendSort(this.value)" style="width:auto;padding:6px 28px 6px 10px;margin-left:auto">${[['recent', 'Recently trained'], ['az', 'A to Z']].map(([v, l]) => `<option value="${v}"${(window._trendState.sort === 'az' ? 'az' : 'recent') === v ? ' selected' : ''}>${l}</option>`).join('')}</select><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
+    <div class="pf-bar"><span class="pf-count" id="pf-count"></span><select class="field-input" id="pf-sort" aria-label="Sort exercises" onchange="_setTrendSort(this.value)" style="width:auto;padding:6px 28px 6px 10px;margin-left:auto">${[['recent', 'Recently trained'], ['az', 'A to Z']].map(([v, l]) => `<option value="${v}"${(/** @type {any} */ (window)._trendState.sort === 'az' ? 'az' : 'recent') === v ? ' selected' : ''}>${l}</option>`).join('')}</select><button type="button" class="pf-all" id="pf-all" onclick="_perfAll()" hidden></button></div>
     <div id="perf-ex-list"></div>`
   const story = el.querySelector('#perf-story')
   if (story) story._strength = { exercises, today, view: '6w', dash: false }      // what the pills repaint from
@@ -3353,7 +3354,7 @@ function _setTrendRange(r) {
   else renderProgressStrength(document.getElementById('perf-sub-content'))
 }
 // The Lifts list's order: 'recent' (the default) or 'az'. Re-renders from the cache, like the range and the search box.
-function _setTrendSort(v) { window._trendState.sort = v === 'az' ? 'az' : 'recent'; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
+function _setTrendSort(v) { /** @type {any} */ (window)._trendState.sort = v === 'az' ? 'az' : 'recent'; _renderPerfExerciseList(/** @type {HTMLInputElement|null} */ (document.getElementById('perf-ex-search'))?.value || '') }
 function _setTrendMetric(exName, key) { window._trendState.metricByEx[exName] = key; _renderPerfExerciseList(document.getElementById('perf-ex-search')?.value || '') }
 
 // Per-type chip config: [metricKey, label, aggMode, formatter, lowerBetter?]. Chips with all-zero
@@ -4084,7 +4085,7 @@ function _renderPerfExerciseList(query) {
   // Most recently trained first (2026-11-17, audit backlog #11: the main lifts were buried alphabetically), name as the tie-break; 'az' is A to Z.
   // _buildExerciseSeries returns the list A to Z with each exercise's sessions oldest first, so the last session is its latest.
   const lastDate = ex => (ex.sessions || []).reduce((m, s) => (s.date > m ? s.date : m), '')
-  const sorted = window._trendState.sort === 'az' ? all : [...all].sort((a, b) => (lastDate(b) > lastDate(a) ? 1 : lastDate(b) < lastDate(a) ? -1 : a.name.localeCompare(b.name)))
+  const sorted = /** @type {any} */ (window)._trendState.sort === 'az' ? all : [...all].sort((a, b) => (lastDate(b) > lastDate(a) ? 1 : lastDate(b) < lastDate(a) ? -1 : a.name.localeCompare(b.name)))
   const list = sorted.filter(ex => !q || ex.name.toLowerCase().includes(q))
   const openMap = _perfOpenMap()
   if (!list.length) {

@@ -819,7 +819,8 @@ const _GOAL_RATE_DAYS = 42, _GOAL_ETA_WEEKS = 104
 function _goalProjection(points, n, due, today, windowDays = _GOAL_RATE_DAYS) {
   if (!n || (n.up ? n.cur >= n.target : n.cur <= n.target)) return null
   const dayNo = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000 }
-  const ymdOf = x => new Date(Math.round(x) * 86400000).toISOString().slice(0, 10)      // a UTC day number back to its own date
+  // A UTC day number back to its own date, from its UTC parts (not toISOString: checks.sh holds that pattern at 0, as it is the wrong day for a LOCAL date).
+  const ymdOf = x => { const d = new Date(Math.round(x) * 86400000), p = n => String(n).padStart(2, '0'); return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}` }
   const t = dayNo(today)
   const pts = (points || []).map(p => ({ x: dayNo(p.date), y: Number(p.v) })).filter(p => Number.isFinite(p.y) && p.x <= t && p.x > t - windowDays).sort((a, b) => a.x - b.x)
   let perWeek = null, eta = null, slow = false
@@ -1268,7 +1269,7 @@ async function _fillGoalProjection(g) {
       const from = _ymdLocal(new Date(y, m - 1, d - (windowDays - 1)))
       const { data, error } = await db.from('weight_logs').select('date, weight_kg').eq('client_id', g.client_id).gte('date', from).order('date').limit(200)
       if (error) throw error
-      pts = (data || []).map(r => ({ date: r.date, v: _goalLiveValue(parseFloat(r.weight_kg), g.metric_unit) }))
+      pts = (data || []).map(r => ({ date: r.date, v: _goalLiveValue(Number(r.weight_kg), g.metric_unit) }))
     } else if (g.linked_metric === 'top_set') {
       const sessions = await _fetchExerciseSessions(g.client_id, g.metric_label)
       // Sessions since the goal began only, as its bar counts them (_prBaseline with `since`), so the rate and the bar agree.
