@@ -2097,8 +2097,7 @@ function setTsEffort(i, type, containerId) {
   flushTemplateSets(containerId)
   window._templateSets[i].effortType = type
   // In the grouped view the scale belongs to the whole group: copy it on, or the sets differ and the editor falls back to per-set cards.
-  const host = document.getElementById(containerId)
-  if (host?.dataset.tsView === 'uniform') _tsPropagate(window._templateSets, host.dataset.tsTop === '1')
+  _sfKeepGroup(containerId)
   const tid = containerId === 'att-sets-container' ? 'att-type' : 'ett-type'
   renderTemplateSets(containerId, document.getElementById(tid)?.value || 'weight_reps')
 }
